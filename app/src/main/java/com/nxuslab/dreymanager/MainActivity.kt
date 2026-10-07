@@ -259,10 +259,17 @@ private fun EmptyState(message: String) {
 
 @Composable
 private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle: (String) -> Unit, onDelete: (String) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var onlyPending by rememberSaveable { mutableStateOf(false) }
+    val visibleTasks = tasks.filter { task ->
+        (!onlyPending || !task.completed) && (query.isBlank() || task.title.contains(query, ignoreCase = true))
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Tarefas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Acompanhe o que precisa ser feito.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (tasks.isEmpty()) item { Empty("Nenhuma tarefa ainda", "Use o botão + para criar sua primeira tarefa.") }
-        items(tasks, key = { it.id }) { task -> Card(Modifier.fillMaxWidth()) {
+        item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Buscar tarefas") }, singleLine = true) }
+        item { FilterButton(if (onlyPending) "Somente pendentes" else "Todas as tarefas", onlyPending) { onlyPending = !onlyPending } }
+        if (visibleTasks.isEmpty()) item { Empty(if (tasks.isEmpty()) "Nenhuma tarefa ainda" else "Nenhum resultado", if (tasks.isEmpty()) "Use o botão + para criar sua primeira tarefa." else "Ajuste a busca ou o filtro.") }
+        items(visibleTasks, key = { it.id }) { task -> Card(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(task.completed, { onToggle(task.id) })
                 Column(Modifier.weight(1f)) { Text(task.title, fontWeight = FontWeight.SemiBold, textDecoration = if (task.completed) TextDecoration.LineThrough else null); task.dueDate?.let { Text("Prazo: $it", style = MaterialTheme.typography.bodySmall) } }
