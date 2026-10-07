@@ -1,11 +1,15 @@
 package com.nxuslab.dreymanager
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +24,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.nxuslab.dreymanager.data.MoneyTransaction
 import com.nxuslab.dreymanager.data.CategoryEntity
 import com.nxuslab.dreymanager.data.GoalEntity
@@ -28,6 +35,9 @@ import com.nxuslab.dreymanager.data.RecurringBillEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.ui.DreyManagerTheme
+import com.nxuslab.dreymanager.notifications.ReminderWorker
+import com.nxuslab.dreymanager.notifications.NotificationHelper
+import java.util.concurrent.TimeUnit
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.YearMonth
@@ -38,6 +48,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        NotificationHelper.createChannel(this)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 700)
+        }
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "drey-daily-reminders", ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<ReminderWorker>(1, TimeUnit.DAYS).build(),
+        )
         setContent { DreyManagerTheme { PersonalManagerApp() } }
     }
 }
@@ -60,18 +80,18 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                listOf("Início", "Finanças", "Planejar", "Tarefas").forEachIndexed { index, name ->
+                listOf("Início", "Finanças", "Planejar", "Relatórios", "Tarefas").forEachIndexed { index, name ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Text(listOf("◉", "◈", "⌁", "✓")[index]) },
+                        icon = { Text(listOf("◉", "◈", "⌁", "▥", "✓")[index]) },
                         label = { Text(name) },
                     )
                 }
             }
         },
         floatingActionButton = {
-            if (tab > 0) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
+            if (tab == 1 || tab == 2 || tab == 4) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
                 if (tab == 1) transactionDialog = true else if (tab == 2) recurringDialog = true else taskDialog = true
             }) { Text("+") }
         },
@@ -80,6 +100,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
             0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, updates, { tab = 1 }, { tab = 2 })
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
+            3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
             else -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
         }
     }
@@ -148,6 +169,49 @@ private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransactio
     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(item.description, fontWeight = FontWeight.SemiBold); Text(categories.firstOrNull { it.id == item.categoryId }?.name ?: if (item.type == TransactionType.INCOME) "Entrada" else "Saída", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Column(horizontalAlignment = Alignment.End) { Text((if (item.type == TransactionType.INCOME) "+ " else "− ") + money(item.amount), fontWeight = FontWeight.Bold, color = if (item.type == TransactionType.INCOME) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error); TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } }
+    }
+}
+
+@Composable
+private fun ReportsScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>) {
+    val categoryNames = categories.associate { it.id to it.name }
+    val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+    val total = expenses.sumOf { it.amount }
+    val grouped = expenses.groupBy { it.categoryId ?: "other" }
+        .map { (id, rows) -> (categoryNames[id] ?: "Outros") to rows.sumOf { it.amount } }
+        .sortedByDescending { it.second }
+    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            Text("Relatórios", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Acompanhe para onde seu dinheiro está indo.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = MaterialTheme.shapes.extraLarge) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("DESPESAS REGISTRADAS", style = MaterialTheme.typography.labelMedium)
+                    Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("por categoria", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+        }
+        if (grouped.isEmpty()) item { EmptyState("Adicione despesas para visualizar seu relatório.") }
+        items(grouped) { (name, value) ->
+            val progress = if (total > 0) (value / total).toFloat() else 0f
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(name, fontWeight = FontWeight.SemiBold)
+                    Text(money(value), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(message: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Text(message, Modifier.padding(18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
