@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.YearMonth
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -270,9 +271,10 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
         item { FilterButton(if (onlyPending) "Somente pendentes" else "Todas as tarefas", onlyPending) { onlyPending = !onlyPending } }
         if (visibleTasks.isEmpty()) item { Empty(if (tasks.isEmpty()) "Nenhuma tarefa ainda" else "Nenhum resultado", if (tasks.isEmpty()) "Use o botão + para criar sua primeira tarefa." else "Ajuste a busca ou o filtro.") }
         items(visibleTasks, key = { it.id }) { task -> Card(Modifier.fillMaxWidth()) {
+            val overdue = !task.completed && task.dueDate?.let { runCatching { LocalDate.parse(it).isBefore(LocalDate.now()) }.getOrDefault(false) } == true
             Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(task.completed, { onToggle(task.id) })
-                Column(Modifier.weight(1f)) { Text(task.title, fontWeight = FontWeight.SemiBold, textDecoration = if (task.completed) TextDecoration.LineThrough else null); task.dueDate?.let { Text("Prazo: $it", style = MaterialTheme.typography.bodySmall) } }
+                Column(Modifier.weight(1f)) { Text(task.title, fontWeight = FontWeight.SemiBold, textDecoration = if (task.completed) TextDecoration.LineThrough else null); task.dueDate?.let { Text(if (overdue) "Atrasada • prazo: $it" else "Prazo: $it", style = MaterialTheme.typography.bodySmall, color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) } }
                 TextButton(onClick = { onDelete(task.id) }) { Text("Excluir") }
             }
         } }
