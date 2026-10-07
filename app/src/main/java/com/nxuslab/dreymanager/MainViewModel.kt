@@ -22,6 +22,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.roundToLong
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -140,6 +143,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTask(id: String) {
         viewModelScope.launch { database.taskDao().delete(id) }
+    }
+
+    suspend fun exportSnapshot(): String {
+        val root = JSONObject()
+        root.put("exportedAt", System.currentTimeMillis())
+        root.put("transactions", JSONArray(database.transactionDao().observeAll().first().map { row ->
+            JSONObject().apply {
+                put("id", row.id); put("description", row.description); put("amountCents", row.amountCents)
+                put("type", row.type); put("categoryId", row.categoryId); put("createdAt", row.createdAt); put("recurring", row.recurring)
+            }
+        }))
+        root.put("tasks", JSONArray(database.taskDao().observeAll().first().map { row ->
+            JSONObject().apply {
+                put("id", row.id); put("title", row.title); put("dueDate", row.dueDate)
+                put("completed", row.completed); put("reminderAt", row.reminderAt); put("createdAt", row.createdAt)
+            }
+        }))
+        root.put("categories", JSONArray(database.categoryDao().observeAll().first().map { row ->
+            JSONObject().apply { put("id", row.id); put("name", row.name); put("color", row.color); put("kind", row.kind) }
+        }))
+        root.put("recurringBills", JSONArray(database.recurringBillDao().observeActive().first().map { row ->
+            JSONObject().apply { put("id", row.id); put("title", row.title); put("amountCents", row.amountCents); put("dayOfMonth", row.dayOfMonth); put("categoryId", row.categoryId); put("active", row.active) }
+        }))
+        root.put("goals", JSONArray(database.goalDao().observeAll().first().map { row ->
+            JSONObject().apply { put("id", row.id); put("title", row.title); put("targetCents", row.targetCents); put("currentCents", row.currentCents); put("deadline", row.deadline) }
+        }))
+        return root.toString(2)
     }
 }
 

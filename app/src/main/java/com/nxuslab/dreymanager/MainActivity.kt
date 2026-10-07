@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -43,6 +44,7 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,6 +66,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
+    val context = LocalContext.current
+    var exportUri by remember { mutableStateOf<Uri?>(null) }
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> exportUri = uri }
+    LaunchedEffect(exportUri) {
+        exportUri?.let { uri ->
+            val snapshot = viewModel.exportSnapshot()
+            context.contentResolver.openOutputStream(uri)?.use { it.write(snapshot.toByteArray()) }
+            exportUri = null
+        }
+    }
     val updates by viewModel.updateState.collectAsStateWithLifecycle()
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
@@ -97,7 +109,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         },
     ) { padding ->
         when (tab) {
-            0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, updates, { tab = 1 }, { tab = 2 })
+            0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") })
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
             3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
@@ -124,7 +136,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
 }
 
 @Composable
-private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit) {
+private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit) {
     val balance = transactions.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -137,6 +149,7 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
         item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("DISPONÍVEL AGORA", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Atualizado com seus lançamentos", color = MaterialTheme.colorScheme.onPrimaryContainer) } } }
         item { Shortcut("Finanças", "${transactions.size} lançamento(s) registrados", openFinance) }
         item { Shortcut("Tarefas", "${tasks.count { !it.completed }} pendente(s)", openTasks) }
+        item { Shortcut("Backup dos dados", "Exportar um arquivo JSON deste aparelho", exportData) }
         item { Text("Privacidade em primeiro lugar", fontWeight = FontWeight.SemiBold); Text("Os dados desta versão ficam protegidos e salvos somente neste aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
