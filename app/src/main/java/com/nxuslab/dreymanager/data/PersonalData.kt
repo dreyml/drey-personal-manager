@@ -12,6 +12,7 @@ data class MoneyTransaction(
     val description: String,
     val amount: Double,
     val type: TransactionType,
+    val categoryId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
 

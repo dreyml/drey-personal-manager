@@ -96,7 +96,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addTransaction(description: String, amount: Double, type: TransactionType) {
+    fun addTransaction(description: String, amount: Double, type: TransactionType, categoryId: String?) {
         if (description.isBlank() || amount <= 0) return
         viewModelScope.launch {
             database.transactionDao().insert(
@@ -105,6 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     description = description.trim(),
                     amountCents = (amount * 100).roundToLong(),
                     type = type.name,
+                    categoryId = categoryId,
                     createdAt = System.currentTimeMillis(),
                 ),
             )
@@ -147,6 +148,7 @@ private fun TransactionEntity.toModel() = MoneyTransaction(
     description = description,
     amount = amountCents / 100.0,
     type = TransactionType.valueOf(type),
+    categoryId = categoryId,
     createdAt = createdAt,
 )
 
