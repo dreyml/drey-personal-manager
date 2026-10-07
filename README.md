@@ -52,6 +52,8 @@ Regras:
 - O DNS `updateappdrey.nxuslab.com` deve apontar para a VM OCI `137.131.136.166`, com certificado TLS válido.
 
 Um exemplo pronto está em [`server/manifest.example.json`](server/manifest.example.json).
+Para publicar esse endpoint sem interferir nos demais sites da VM, consulte a
+[configuração Nginx isolada](server/nginx/README.md).
 
 ## Como executar
 
