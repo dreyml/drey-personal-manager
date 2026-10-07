@@ -120,7 +120,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         when (tab) {
             0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
-            2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
+            2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
             3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
             else -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
         }
@@ -303,7 +303,7 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
 }
 
 @Composable
-private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, onAddBill: (String, Double, Int, String?) -> Unit, onAddGoal: (String, Double, String?) -> Unit, onAddGoalClick: () -> Unit) {
+private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, categories: List<CategoryEntity>, onAddBill: (String, Double, Int, String?) -> Unit, onAddGoal: (String, Double, String?) -> Unit, onAddGoalClick: () -> Unit) {
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Planejamento", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Antecipe seus compromissos e objetivos.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Metas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); TextButton(onClick = onAddGoalClick) { Text("+ Meta") } } }
@@ -314,7 +314,7 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
         }
         item { Text("Contas recorrentes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (bills.isEmpty()) item { Empty("Nenhuma conta recorrente", "Use o botão + para registrar uma cobrança mensal.") }
-        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, fontWeight = FontWeight.SemiBold); Text("Todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold) } } }
+        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, fontWeight = FontWeight.SemiBold); Text("Todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(categories.firstOrNull { it.id == bill.categoryId }?.name ?: "Sem categoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold) } } }
     }
 }
 
