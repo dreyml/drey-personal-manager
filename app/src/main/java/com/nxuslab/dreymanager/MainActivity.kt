@@ -264,7 +264,7 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
     var onlyPending by rememberSaveable { mutableStateOf(false) }
     val visibleTasks = tasks.filter { task ->
         (!onlyPending || !task.completed) && (query.isBlank() || task.title.contains(query, ignoreCase = true))
-    }
+    }.sortedWith(compareBy<PersonalTask> { it.completed }.thenBy { it.dueDate ?: "9999-99-99" })
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Tarefas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Acompanhe o que precisa ser feito.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Buscar tarefas") }, singleLine = true) }
