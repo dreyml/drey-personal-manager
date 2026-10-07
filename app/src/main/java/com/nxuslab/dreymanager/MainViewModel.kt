@@ -9,6 +9,9 @@ import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.data.MoneyTransaction
 import com.nxuslab.dreymanager.data.PersonalTask
 import com.nxuslab.dreymanager.data.PersonalDatabase
+import com.nxuslab.dreymanager.data.CategoryEntity
+import com.nxuslab.dreymanager.data.GoalEntity
+import com.nxuslab.dreymanager.data.RecurringBillEntity
 import com.nxuslab.dreymanager.data.TaskEntity
 import com.nxuslab.dreymanager.data.TransactionEntity
 import com.nxuslab.dreymanager.data.TransactionType
@@ -38,9 +41,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .map { rows -> rows.map { it.toModel() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val categories: StateFlow<List<CategoryEntity>> = database.categoryDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val recurringBills: StateFlow<List<RecurringBillEntity>> = database.recurringBillDao().observeActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val goals: StateFlow<List<GoalEntity>> = database.goalDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
+        viewModelScope.launch { seedCategoriesIfNeeded() }
         viewModelScope.launch {
             _updateState.value = updateChecker.check()
+        }
+    }
+
+    private suspend fun seedCategoriesIfNeeded() {
+        if (database.categoryDao().count() == 0) {
+            database.categoryDao().insertAll(
+                listOf(
+                    CategoryEntity("housing", "Moradia", 0xFF8B5CF6),
+                    CategoryEntity("food", "Alimentação", 0xFFF59E0B),
+                    CategoryEntity("transport", "Transporte", 0xFF38BDF8),
+                    CategoryEntity("subscriptions", "Assinaturas", 0xFFEC4899),
+                    CategoryEntity("loans", "Cobranças", 0xFF34D399),
+                    CategoryEntity("other", "Outros", 0xFF94A3B8),
+                ),
+            )
+        }
+    }
+
+    fun addRecurringBill(title: String, amount: Double, dayOfMonth: Int, categoryId: String?) {
+        if (title.isBlank() || amount <= 0 || dayOfMonth !in 1..31) return
+        viewModelScope.launch {
+            database.recurringBillDao().insert(
+                RecurringBillEntity(
+                    id = java.util.UUID.randomUUID().toString(), title = title.trim(),
+                    amountCents = (amount * 100).roundToLong(), dayOfMonth = dayOfMonth, categoryId = categoryId,
+                ),
+            )
+        }
+    }
+
+    fun addGoal(title: String, target: Double, deadline: String?) {
+        if (title.isBlank() || target <= 0) return
+        viewModelScope.launch {
+            database.goalDao().insert(
+                GoalEntity(
+                    id = java.util.UUID.randomUUID().toString(), title = title.trim(),
+                    targetCents = (target * 100).roundToLong(), deadline = deadline?.trim()?.takeIf { it.isNotBlank() },
+                ),
+            )
         }
     }
 
