@@ -8,5 +8,6 @@
 .cxx/
 app/build/
 work/
+outputs/
 *.jks
 *.keystore

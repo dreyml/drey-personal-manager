@@ -25,7 +25,7 @@ UpdateRepository (manifesto HTTPS)
 
 - **UI:** Kotlin + Jetpack Compose e Material 3.
 - **Estado:** ViewModel + StateFlow.
-- **Dados da V1:** lançamentos e tarefas persistidos localmente no aparelho.
+- **Dados:** Room + SQLite local, com valores financeiros armazenados em centavos.
 - **Atualizações:** requisição HTTPS curta, executada fora da thread principal.
 - **Falha segura:** indisponibilidade do servidor não bloqueia o app.
 - **Dados futuros:** Room para dados locais; Android Keystore para material criptográfico.
