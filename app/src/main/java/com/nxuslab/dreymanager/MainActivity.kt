@@ -172,16 +172,22 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
 
 @Composable
 private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>, onDelete: (String) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
     val current = YearMonth.now()
     val month = transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault())) == current }
     val income = month.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     val expense = month.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+    val filtered = transactions.filter { row ->
+        query.isBlank() || row.description.contains(query, ignoreCase = true) ||
+            categories.firstOrNull { it.id == row.categoryId }?.name?.contains(query, ignoreCase = true) == true
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Finanças", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Resumo deste mês", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { Summary("Entradas", money(income), Modifier.weight(1f)); Summary("Saídas", money(expense), Modifier.weight(1f)) } }
+        item { OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar lançamentos") }, placeholder = { Text("Descrição ou categoria") }) }
         item { Text("Lançamentos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
-        if (transactions.isEmpty()) item { Empty("Nenhum lançamento ainda", "Use o botão + para registrar uma entrada ou saída.") }
-        items(transactions, key = { it.id }) { item -> TransactionItem(item, categories, onDelete) }
+        if (filtered.isEmpty()) item { Empty(if (transactions.isEmpty()) "Nenhum lançamento ainda" else "Nenhum resultado", if (transactions.isEmpty()) "Use o botão + para registrar uma entrada ou saída." else "Tente outra descrição ou categoria.") }
+        items(filtered, key = { it.id }) { item -> TransactionItem(item, categories, onDelete) }
     }
 }
 
