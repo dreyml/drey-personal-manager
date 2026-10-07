@@ -201,8 +201,8 @@ private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransactio
 
 @Composable
 private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) Button(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
-    else OutlinedButton(onClick = onClick, modifier = Modifier.weight(1f)) { Text(label) }
+    if (selected) Button(onClick = onClick) { Text(label) }
+    else OutlinedButton(onClick = onClick) { Text(label) }
 }
 
 @Composable private fun Summary(label: String, value: String, modifier: Modifier) = Card(modifier, shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) } }
