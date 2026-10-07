@@ -136,7 +136,8 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     )
     if (recurringDialog) RecurringDialog(
         onDismiss = { recurringDialog = false },
-        onSave = { title, amount, day -> viewModel.addRecurringBill(title, amount, day, null); recurringDialog = false },
+        categories = categories,
+        onSave = { title, amount, day, categoryId -> viewModel.addRecurringBill(title, amount, day, categoryId); recurringDialog = false },
     )
     if (goalDialog) GoalDialog(
         onDismiss = { goalDialog = false },
@@ -317,9 +318,9 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
     }
 }
 
-@Composable private fun RecurringDialog(onDismiss: () -> Unit, onSave: (String, Double, Int) -> Unit) {
-    var title by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var day by remember { mutableStateOf("1") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova conta recorrente") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor mensal") }, singleLine = true); OutlinedTextField(day, { day = it.filter(Char::isDigit) }, label = { Text("Dia do mês") }, singleLine = true) } }, confirmButton = { Button(onClick = { amount.toDoubleOrNull()?.let { onSave(title, it, day.toIntOrNull() ?: 1) } }, enabled = title.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0 && (day.toIntOrNull() ?: 0) in 1..31) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+@Composable private fun RecurringDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, Int, String?) -> Unit) {
+    var title by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var day by remember { mutableStateOf("1") }; var categoryId by remember { mutableStateOf<String?>(null) }; var menu by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova conta recorrente") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor mensal") }, singleLine = true); OutlinedTextField(day, { day = it.filter(Char::isDigit) }, label = { Text("Dia do mês") }, singleLine = true); Box { OutlinedButton(onClick = { menu = true }) { Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Escolher categoria") }; DropdownMenu(menu, { menu = false }) { categories.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; menu = false }) } } } } }, confirmButton = { Button(onClick = { amount.toDoubleOrNull()?.let { onSave(title, it, day.toIntOrNull() ?: 1, categoryId) } }, enabled = title.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0 && (day.toIntOrNull() ?: 0) in 1..31) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable private fun GoalDialog(onDismiss: () -> Unit, onSave: (String, Double, String?) -> Unit) {
