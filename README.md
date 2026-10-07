@@ -4,7 +4,7 @@ Aplicativo Android de gerenciamento pessoal, construído em Kotlin e Jetpack Com
 
 ## Estado atual
 
-Este repositório contém a base do aplicativo e o primeiro fluxo transversal: uma consulta de atualização feita na inicialização. O app busca um manifesto em `https://updateappdrey.nxuslab.com/manifest.json`, compara o `versionCode` publicado com a versão instalada e mostra um comunicado quando há uma versão mais recente.
+Este repositório contém a primeira versão local do aplicativo: painel inicial, lançamentos financeiros, tarefas e uma consulta de atualização feita na inicialização. O app busca um manifesto em `https://updateappdrey.nxuslab.com/manifest.json`, compara o `versionCode` publicado com a versão instalada e mostra um comunicado quando há uma versão mais recente.
 
 O aplicativo **não instala atualizações silenciosamente**. A ação do comunicado apenas abre uma URL HTTPS para que o usuário escolha baixar a nova versão.
 
@@ -25,6 +25,7 @@ UpdateRepository (manifesto HTTPS)
 
 - **UI:** Kotlin + Jetpack Compose e Material 3.
 - **Estado:** ViewModel + StateFlow.
+- **Dados da V1:** lançamentos e tarefas persistidos localmente no aparelho.
 - **Atualizações:** requisição HTTPS curta, executada fora da thread principal.
 - **Falha segura:** indisponibilidade do servidor não bloqueia o app.
 - **Dados futuros:** Room para dados locais; Android Keystore para material criptográfico.
@@ -67,11 +68,12 @@ Para publicar esse endpoint sem interferir nos demais sites da VM, consulte a
 - [x] Estrutura Android em Kotlin + Jetpack Compose.
 - [x] Verificação de atualização na inicialização.
 - [x] Comunicado com link de download, sem instalação silenciosa.
-- [ ] Navegação e design system do aplicativo.
-- [ ] Finanças: contas, categorias, receitas, despesas e orçamento.
+- [x] Navegação inicial entre painel, finanças e tarefas.
+- [x] Finanças: receitas, despesas, saldo e resumo mensal.
+- [x] Tarefas locais com prazo opcional e conclusão.
 - [ ] Lembretes e tarefas recorrentes com notificações.
 - [ ] Metas pessoais e financeiras.
-- [ ] Persistência local com Room.
+- [ ] Migração da persistência local da V1 para Room.
 - [ ] Backup e restauração criptografados.
 - [ ] Cofre de senhas com desenho de segurança e auditoria próprios.
 - [ ] Pipeline de build, testes e publicação de APK assinado.
