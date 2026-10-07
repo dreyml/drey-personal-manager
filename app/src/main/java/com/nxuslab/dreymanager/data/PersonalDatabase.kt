@@ -67,6 +67,9 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(transaction: TransactionEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(transactions: List<TransactionEntity>)
+
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun delete(id: String)
 }
@@ -78,6 +81,9 @@ interface TaskDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(task: TaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(tasks: List<TaskEntity>)
 
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): TaskEntity?
@@ -105,6 +111,9 @@ interface RecurringBillDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(bill: RecurringBillEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(bills: List<RecurringBillEntity>)
 }
 
 @Dao
@@ -114,6 +123,9 @@ interface GoalDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(goal: GoalEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(goals: List<GoalEntity>)
 }
 
 @Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class], version = 2, exportSchema = true)

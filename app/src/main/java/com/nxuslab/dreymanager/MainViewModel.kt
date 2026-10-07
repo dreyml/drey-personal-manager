@@ -171,6 +171,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }))
         return root.toString(2)
     }
+
+    fun restoreSnapshot(json: String) {
+        viewModelScope.launch {
+            val root = JSONObject(json)
+            root.optJSONArray("transactions")?.let { array -> database.transactionDao().insertAll((0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                TransactionEntity(o.getString("id"), o.getString("description"), o.getLong("amountCents"), o.getString("type"), o.optString("categoryId").takeIf { it != "null" && it.isNotBlank() }, o.getLong("createdAt"), o.optBoolean("recurring"))
+            }) }
+            root.optJSONArray("tasks")?.let { array -> database.taskDao().insertAll((0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                TaskEntity(o.getString("id"), o.getString("title"), o.optString("dueDate").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("completed"), if (o.isNull("reminderAt")) null else o.optLong("reminderAt"), o.getLong("createdAt"))
+            }) }
+            root.optJSONArray("recurringBills")?.let { array -> database.recurringBillDao().insertAll((0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                RecurringBillEntity(o.getString("id"), o.getString("title"), o.getLong("amountCents"), o.getInt("dayOfMonth"), o.optString("categoryId").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("active", true))
+            }) }
+            root.optJSONArray("goals")?.let { array -> database.goalDao().insertAll((0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                GoalEntity(o.getString("id"), o.getString("title"), o.getLong("targetCents"), o.optLong("currentCents"), o.optString("deadline").takeIf { it != "null" && it.isNotBlank() })
+            }) }
+        }
+    }
 }
 
 private fun TransactionEntity.toModel() = MoneyTransaction(
