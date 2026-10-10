@@ -118,7 +118,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         },
     ) { padding ->
         when (tab) {
-            0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
+            0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, recurringBills, goals, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
             3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
@@ -146,7 +146,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
 }
 
 @Composable
-private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
+private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
     val balance = transactions.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
     val income = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     val expense = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
@@ -161,11 +161,15 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
         item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("SALDO DISPONÍVEL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Seu panorama financeiro em um só lugar", color = MaterialTheme.colorScheme.onPrimaryContainer); HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Entradas", style = MaterialTheme.typography.labelSmall); Text(money(income), fontWeight = FontWeight.SemiBold) }; Column(horizontalAlignment = Alignment.End) { Text("Saídas", style = MaterialTheme.typography.labelSmall); Text(money(expense), fontWeight = FontWeight.SemiBold) } } } } }
         item { Shortcut("Finanças", "${transactions.size} lançamento(s) registrados", openFinance) }
         item { Shortcut("Tarefas", "${tasks.count { !it.completed }} pendente(s)", openTasks) }
+        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Resumo rápido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { QuickMetric("Pendentes", tasks.count { !it.completed }.toString()); QuickMetric("Contas", bills.size.toString()); QuickMetric("Metas", goals.size.toString()) } } } }
         item { Shortcut("Backup dos dados", "Exportar um arquivo JSON deste aparelho", exportData) }
         item { Shortcut("Restaurar backup", "Importar um arquivo JSON salvo", importData) }
         item { Text("Privacidade em primeiro lugar", fontWeight = FontWeight.SemiBold); Text("Os dados desta versão ficam protegidos e salvos somente neste aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
+
+@Composable
+private fun QuickMetric(label: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 
 @Composable private fun Shortcut(title: String, subtitle: String, onClick: () -> Unit) = Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
