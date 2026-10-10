@@ -5,7 +5,8 @@
 
     <application
         android:allowBackup="true"
-        android:label="Drey Manager"
+        android:icon="@drawable/nxuslife_logo"
+        android:label="NxusLife"
         android:supportsRtl="true"
         android:theme="@style/Theme.DreyManager"
         android:usesCleartextTraffic="false">
