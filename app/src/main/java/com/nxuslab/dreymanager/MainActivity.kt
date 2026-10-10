@@ -156,7 +156,7 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
             Text("Visão geral do seu dia", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (update is UpdateState.Available) item { UpdateNotice(update) }
-        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("DISPONÍVEL AGORA", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Atualizado com seus lançamentos", color = MaterialTheme.colorScheme.onPrimaryContainer) } } }
+        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("SALDO DISPONÍVEL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Seu panorama financeiro em um só lugar", color = MaterialTheme.colorScheme.onPrimaryContainer) } } }
         item { Shortcut("Finanças", "${transactions.size} lançamento(s) registrados", openFinance) }
         item { Shortcut("Tarefas", "${tasks.count { !it.completed }} pendente(s)", openTasks) }
         item { Shortcut("Backup dos dados", "Exportar um arquivo JSON deste aparelho", exportData) }

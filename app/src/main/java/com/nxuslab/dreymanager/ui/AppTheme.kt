@@ -5,21 +5,21 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val DreyColors = darkColorScheme(
-    primary = Color(0xFF9A8CFF),
-    onPrimary = Color(0xFF19122E),
-    primaryContainer = Color(0xFF302657),
-    onPrimaryContainer = Color(0xFFE7E0FF),
-    secondary = Color(0xFF53D4B7),
+private val NxusColors = darkColorScheme(
+    primary = Color(0xFF6E7BFF),
+    onPrimary = Color(0xFF080B1C),
+    primaryContainer = Color(0xFF202A68),
+    onPrimaryContainer = Color(0xFFE8EAFF),
+    secondary = Color(0xFF63E6BE),
     onSecondary = Color(0xFF06231D),
     secondaryContainer = Color(0xFF123D34),
     tertiary = Color(0xFFFFB86B),
     tertiaryContainer = Color(0xFF4B2E0C),
-    background = Color(0xFF0B1020),
-    onBackground = Color(0xFFF3F1FF),
-    surface = Color(0xFF131A2C),
-    surfaceVariant = Color(0xFF20293D),
-    onSurface = Color(0xFFF3F1FF),
+    background = Color(0xFF070A16),
+    onBackground = Color(0xFFF5F7FF),
+    surface = Color(0xFF10162A),
+    surfaceVariant = Color(0xFF1B2540),
+    onSurface = Color(0xFFF5F7FF),
     onSurfaceVariant = Color(0xFFC2C8D8),
     outline = Color(0xFF404A62),
     error = Color(0xFFFFB4AB),
@@ -27,5 +27,5 @@ private val DreyColors = darkColorScheme(
 
 @Composable
 fun DreyManagerTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = DreyColors, content = content)
+    MaterialTheme(colorScheme = NxusColors, content = content)
 }
