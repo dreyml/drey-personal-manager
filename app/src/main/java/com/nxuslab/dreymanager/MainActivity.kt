@@ -148,6 +148,8 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
 @Composable
 private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
     val balance = transactions.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
+    val income = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+    val expense = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("Olá!", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
@@ -156,7 +158,7 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
             Text("Visão geral do seu dia", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (update is UpdateState.Available) item { UpdateNotice(update) }
-        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("SALDO DISPONÍVEL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Seu panorama financeiro em um só lugar", color = MaterialTheme.colorScheme.onPrimaryContainer) } } }
+        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("SALDO DISPONÍVEL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer); Text(money(balance), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Text("Seu panorama financeiro em um só lugar", color = MaterialTheme.colorScheme.onPrimaryContainer); HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Entradas", style = MaterialTheme.typography.labelSmall); Text(money(income), fontWeight = FontWeight.SemiBold) }; Column(horizontalAlignment = Alignment.End) { Text("Saídas", style = MaterialTheme.typography.labelSmall); Text(money(expense), fontWeight = FontWeight.SemiBold) } } } } }
         item { Shortcut("Finanças", "${transactions.size} lançamento(s) registrados", openFinance) }
         item { Shortcut("Tarefas", "${tasks.count { !it.completed }} pendente(s)", openTasks) }
         item { Shortcut("Backup dos dados", "Exportar um arquivo JSON deste aparelho", exportData) }
