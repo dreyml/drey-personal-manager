@@ -100,13 +100,20 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
                 listOf("Início", "Finanças", "Planejar", "Relatórios", "Tarefas").forEachIndexed { index, name ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
                         icon = { Text(listOf("◉", "◈", "⌁", "▥", "✓")[index]) },
                         label = { Text(name) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }
