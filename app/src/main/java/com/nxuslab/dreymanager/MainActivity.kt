@@ -239,6 +239,7 @@ private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) 
 @Composable
 private fun ReportsScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>) {
     val categoryNames = categories.associate { it.id to it.name }
+    val incomeTotal = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
     val total = expenses.sumOf { it.amount }
     val grouped = expenses.groupBy { it.categoryId ?: "other" }
@@ -258,6 +259,7 @@ private fun ReportsScreen(modifier: Modifier, transactions: List<MoneyTransactio
                 }
             }
         }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("Entradas", money(incomeTotal), Modifier.weight(1f)); Summary("Resultado", money(incomeTotal - total), Modifier.weight(1f)) } }
         if (grouped.isEmpty()) item { EmptyState("Adicione despesas para visualizar seu relatório.") }
         items(grouped) { (name, value) ->
             val progress = if (total > 0) (value / total).toFloat() else 0f
