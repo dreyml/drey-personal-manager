@@ -59,6 +59,16 @@ data class TaskEntity(
     val createdAt: Long,
 )
 
+@Entity(tableName = "vault_items")
+data class VaultItemEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val title: String,
+    val username: String,
+    val encryptedSecret: String,
+    val notes: String? = null,
+    val createdAt: Long,
+)
+
 @Dao
 interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY createdAt DESC")
@@ -128,13 +138,26 @@ interface GoalDao {
     suspend fun insertAll(goals: List<GoalEntity>)
 }
 
-@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class], version = 2, exportSchema = true)
+@Dao
+interface VaultDao {
+    @Query("SELECT * FROM vault_items ORDER BY title")
+    fun observeAll(): Flow<List<VaultItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: VaultItemEntity)
+
+    @Query("DELETE FROM vault_items WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class], version = 3, exportSchema = true)
 abstract class PersonalDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun taskDao(): TaskDao
     abstract fun categoryDao(): CategoryDao
     abstract fun recurringBillDao(): RecurringBillDao
     abstract fun goalDao(): GoalDao
+    abstract fun vaultDao(): VaultDao
 
     companion object {
         @Volatile private var instance: PersonalDatabase? = null
@@ -144,7 +167,7 @@ abstract class PersonalDatabase : RoomDatabase() {
                 context.applicationContext,
                 PersonalDatabase::class.java,
                 "drey_manager.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -152,6 +175,12 @@ abstract class PersonalDatabase : RoomDatabase() {
                 database.execSQL("CREATE TABLE IF NOT EXISTS categories (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, color INTEGER NOT NULL, kind TEXT NOT NULL)")
                 database.execSQL("CREATE TABLE IF NOT EXISTS recurring_bills (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, amountCents INTEGER NOT NULL, dayOfMonth INTEGER NOT NULL, categoryId TEXT, active INTEGER NOT NULL)")
                 database.execSQL("CREATE TABLE IF NOT EXISTS goals (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, targetCents INTEGER NOT NULL, currentCents INTEGER NOT NULL, deadline TEXT)")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS vault_items (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, username TEXT NOT NULL, encryptedSecret TEXT NOT NULL, notes TEXT, createdAt INTEGER NOT NULL)")
             }
         }
     }
