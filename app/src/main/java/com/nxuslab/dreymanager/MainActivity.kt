@@ -326,8 +326,11 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
 
 @Composable
 private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, categories: List<CategoryEntity>, onAddBill: (String, Double, Int, String?) -> Unit, onAddGoal: (String, Double, String?) -> Unit, onAddGoalClick: () -> Unit) {
+    val recurringTotal = bills.sumOf { it.amountCents } / 100.0
+    val goalTotal = goals.sumOf { it.targetCents } / 100.0
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Planejamento", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Antecipe seus compromissos e objetivos.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("Contas/mês", money(recurringTotal), Modifier.weight(1f)); Summary("Metas", money(goalTotal), Modifier.weight(1f)) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("Metas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); TextButton(onClick = onAddGoalClick) { Text("+ Meta") } } }
         if (goals.isEmpty()) item { Empty("Nenhuma meta criada", "Crie uma meta para acompanhar seu progresso.") }
         items(goals, key = { it.id }) { goal ->
