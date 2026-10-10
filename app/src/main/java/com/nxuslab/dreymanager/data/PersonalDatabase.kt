@@ -69,6 +69,29 @@ data class VaultItemEntity(
     val createdAt: Long,
 )
 
+@Entity(tableName = "installment_plans")
+data class InstallmentPlanEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val description: String,
+    val totalCents: Long,
+    val installmentCents: Long,
+    val installmentCount: Int,
+    val startMonth: String,
+    val endMonth: String,
+    val paidCount: Int = 0,
+)
+
+@Entity(tableName = "debts")
+data class DebtEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val person: String,
+    val description: String,
+    val amountCents: Long,
+    val dueDate: String? = null,
+    val settled: Boolean = false,
+    val createdAt: Long,
+)
+
 @Dao
 interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY createdAt DESC")
@@ -150,7 +173,31 @@ interface VaultDao {
     suspend fun delete(id: String)
 }
 
-@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class], version = 3, exportSchema = true)
+@Dao
+interface InstallmentDao {
+    @Query("SELECT * FROM installment_plans ORDER BY startMonth DESC")
+    fun observeAll(): Flow<List<InstallmentPlanEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(plan: InstallmentPlanEntity)
+
+    @Query("DELETE FROM installment_plans WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
+interface DebtDao {
+    @Query("SELECT * FROM debts ORDER BY settled ASC, dueDate ASC")
+    fun observeAll(): Flow<List<DebtEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(debt: DebtEntity)
+
+    @Query("DELETE FROM debts WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class], version = 4, exportSchema = true)
 abstract class PersonalDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun taskDao(): TaskDao
@@ -158,6 +205,8 @@ abstract class PersonalDatabase : RoomDatabase() {
     abstract fun recurringBillDao(): RecurringBillDao
     abstract fun goalDao(): GoalDao
     abstract fun vaultDao(): VaultDao
+    abstract fun installmentDao(): InstallmentDao
+    abstract fun debtDao(): DebtDao
 
     companion object {
         @Volatile private var instance: PersonalDatabase? = null
@@ -167,7 +216,7 @@ abstract class PersonalDatabase : RoomDatabase() {
                 context.applicationContext,
                 PersonalDatabase::class.java,
                 "drey_manager.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -181,6 +230,13 @@ abstract class PersonalDatabase : RoomDatabase() {
         private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS vault_items (id TEXT NOT NULL PRIMARY KEY, title TEXT NOT NULL, username TEXT NOT NULL, encryptedSecret TEXT NOT NULL, notes TEXT, createdAt INTEGER NOT NULL)")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS installment_plans (id TEXT NOT NULL PRIMARY KEY, description TEXT NOT NULL, totalCents INTEGER NOT NULL, installmentCents INTEGER NOT NULL, installmentCount INTEGER NOT NULL, startMonth TEXT NOT NULL, endMonth TEXT NOT NULL, paidCount INTEGER NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS debts (id TEXT NOT NULL PRIMARY KEY, person TEXT NOT NULL, description TEXT NOT NULL, amountCents INTEGER NOT NULL, dueDate TEXT, settled INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
             }
         }
     }

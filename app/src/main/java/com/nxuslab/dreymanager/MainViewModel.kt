@@ -16,6 +16,8 @@ import com.nxuslab.dreymanager.data.TaskEntity
 import com.nxuslab.dreymanager.data.TransactionEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.data.VaultItemEntity
+import com.nxuslab.dreymanager.data.InstallmentPlanEntity
+import com.nxuslab.dreymanager.data.DebtEntity
 import com.nxuslab.dreymanager.security.VaultCrypto
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +58,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val vaultItems: StateFlow<List<VaultItemEntity>> = database.vaultDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val installmentPlans: StateFlow<List<InstallmentPlanEntity>> = database.installmentDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val debts: StateFlow<List<DebtEntity>> = database.debtDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     var vaultDialog = false
@@ -158,6 +166,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
+
+    fun addInstallment(description: String, total: Double, installment: Double, count: Int, startMonth: String, endMonth: String) {
+        if (description.isBlank() || total <= 0 || installment <= 0 || count <= 0 || startMonth.isBlank() || endMonth.isBlank()) return
+        viewModelScope.launch { database.installmentDao().insert(InstallmentPlanEntity(java.util.UUID.randomUUID().toString(), description.trim(), (total * 100).roundToLong(), (installment * 100).roundToLong(), count, startMonth.trim(), endMonth.trim())) }
+    }
+
+    fun deleteInstallment(id: String) { viewModelScope.launch { database.installmentDao().delete(id) } }
+
+    fun addDebt(person: String, description: String, amount: Double, dueDate: String?) {
+        if (person.isBlank() || description.isBlank() || amount <= 0) return
+        viewModelScope.launch { database.debtDao().insert(DebtEntity(java.util.UUID.randomUUID().toString(), person.trim(), description.trim(), (amount * 100).roundToLong(), dueDate?.trim()?.takeIf { it.isNotBlank() }, false, System.currentTimeMillis())) }
+    }
+
+    fun deleteDebt(id: String) { viewModelScope.launch { database.debtDao().delete(id) } }
 
     suspend fun exportSnapshot(): String {
         val root = JSONObject()
