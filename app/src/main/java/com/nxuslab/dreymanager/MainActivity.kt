@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.biometric.BiometricPrompt
+import androidx.biometric.BiometricManager
+import androidx.fragment.app.FragmentActivity
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -35,6 +38,7 @@ import com.nxuslab.dreymanager.data.CategoryEntity
 import com.nxuslab.dreymanager.data.GoalEntity
 import com.nxuslab.dreymanager.data.PersonalTask
 import com.nxuslab.dreymanager.data.RecurringBillEntity
+import com.nxuslab.dreymanager.data.VaultItemEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.ui.DreyManagerTheme
@@ -49,7 +53,7 @@ import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -93,6 +97,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val recurringBills by viewModel.recurringBills.collectAsStateWithLifecycle()
     val goals by viewModel.goals.collectAsStateWithLifecycle()
+    val vaultItems by viewModel.vaultItems.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var transactionDialog by remember { mutableStateOf(false) }
     var taskDialog by remember { mutableStateOf(false) }
@@ -103,11 +108,11 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
-                listOf("Início", "Finanças", "Planejar", "Relatórios", "Tarefas").forEachIndexed { index, name ->
+                listOf("Início", "Finanças", "Planejar", "Relatórios", "Tarefas", "Cofre").forEachIndexed { index, name ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Text(listOf("◉", "◈", "⌁", "▥", "✓")[index]) },
+                        icon = { Text(listOf("◉", "◈", "⌁", "▥", "✓", "🔒")[index]) },
                         label = { Text(name) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -121,7 +126,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
             }
         },
         floatingActionButton = {
-            if (tab == 1 || tab == 2 || tab == 4) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
+            if (tab == 1 || tab == 2 || tab == 4 || tab == 5) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
                 if (tab == 1) transactionDialog = true else if (tab == 2) recurringDialog = true else taskDialog = true
             }) { Text("+") }
         },
@@ -131,7 +136,8 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
             3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
-            else -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
+            4 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
+            else -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel::deleteVaultItem, viewModel::addVaultItem)
         }
     }
     if (transactionDialog) TransactionDialog(
@@ -276,6 +282,26 @@ private fun EmptyState(message: String) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Text(message, Modifier.padding(18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, onDelete: (String) -> Unit, onAdd: (String, String, String, String?) -> Unit) {
+    var unlocked by rememberSaveable { mutableStateOf(false) }
+    var addDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Cofre", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Seus dados sensíveis ficam protegidos no aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (!unlocked) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Cofre bloqueado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text("Use a biometria para visualizar seus itens."); Button(onClick = { activity?.let { host -> val prompt = BiometricPrompt(host, host.mainExecutor, object : BiometricPrompt.AuthenticationCallback() { override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { unlocked = true } }); prompt.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle("Desbloquear NxusLife").setSubtitle("Confirme sua identidade para abrir o cofre").setNegativeButtonText("Cancelar").build()) } }) { Text("Desbloquear com biometria") } } } }
+        else { item { Button(onClick = { addDialog = true }) { Text("Adicionar item seguro") } }; if (items.isEmpty()) item { Empty("Cofre vazio", "Adicione sua primeira senha ou anotação segura.") }; items(items, key = { it.id }) { item -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold); Text(item.username, color = MaterialTheme.colorScheme.onSurfaceVariant) }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } } } }
+    }
+    if (addDialog) VaultItemDialog(onDismiss = { addDialog = false }, onSave = { title, username, secret -> onAdd(title, username, secret, null); addDialog = false })
+}
+
+@Composable
+private fun VaultItemDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
+    var title by remember { mutableStateOf("") }; var username by remember { mutableStateOf("") }; var secret by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Novo item seguro") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(username, { username = it }, label = { Text("Usuário") }, singleLine = true); OutlinedTextField(secret, { secret = it }, label = { Text("Senha ou segredo") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(title, username, secret) }, enabled = title.isNotBlank() && secret.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable

@@ -15,6 +15,8 @@ import com.nxuslab.dreymanager.data.RecurringBillEntity
 import com.nxuslab.dreymanager.data.TaskEntity
 import com.nxuslab.dreymanager.data.TransactionEntity
 import com.nxuslab.dreymanager.data.TransactionType
+import com.nxuslab.dreymanager.data.VaultItemEntity
+import com.nxuslab.dreymanager.security.VaultCrypto
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val goals: StateFlow<List<GoalEntity>> = database.goalDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val vaultItems: StateFlow<List<VaultItemEntity>> = database.vaultDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    var vaultDialog = false
 
     init {
         viewModelScope.launch { seedCategoriesIfNeeded() }
@@ -144,6 +151,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteTask(id: String) {
         viewModelScope.launch { database.taskDao().delete(id) }
     }
+
+    fun addVaultItem(title: String, username: String, secret: String, notes: String?) {
+        if (title.isBlank() || secret.isBlank()) return
+        viewModelScope.launch { database.vaultDao().insert(VaultItemEntity(java.util.UUID.randomUUID().toString(), title.trim(), username.trim(), VaultCrypto.encrypt(secret), notes?.trim(), System.currentTimeMillis())) }
+    }
+
+    fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
 
     suspend fun exportSnapshot(): String {
         val root = JSONObject()
