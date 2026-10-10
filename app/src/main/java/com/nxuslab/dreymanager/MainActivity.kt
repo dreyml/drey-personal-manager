@@ -290,6 +290,7 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
     }.sortedWith(compareBy<PersonalTask> { it.completed }.thenBy { it.dueDate ?: "9999-99-99" })
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Tarefas", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Acompanhe o que precisa ser feito.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("Pendentes", tasks.count { !it.completed }.toString(), Modifier.weight(1f)); Summary("Concluídas", tasks.count { it.completed }.toString(), Modifier.weight(1f)) } }
         item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Buscar tarefas") }, singleLine = true) }
         item { FilterButton(if (onlyPending) "Somente pendentes" else "Todas as tarefas", onlyPending) { onlyPending = !onlyPending } }
         if (visibleTasks.isEmpty()) item { Empty(if (tasks.isEmpty()) "Nenhuma tarefa ainda" else "Nenhum resultado", if (tasks.isEmpty()) "Use o botão + para criar sua primeira tarefa." else "Ajuste a busca ou o filtro.") }
