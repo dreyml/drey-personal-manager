@@ -39,6 +39,8 @@ import com.nxuslab.dreymanager.data.GoalEntity
 import com.nxuslab.dreymanager.data.PersonalTask
 import com.nxuslab.dreymanager.data.RecurringBillEntity
 import com.nxuslab.dreymanager.data.VaultItemEntity
+import com.nxuslab.dreymanager.data.InstallmentPlanEntity
+import com.nxuslab.dreymanager.data.DebtEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.ui.DreyManagerTheme
@@ -98,6 +100,8 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     val recurringBills by viewModel.recurringBills.collectAsStateWithLifecycle()
     val goals by viewModel.goals.collectAsStateWithLifecycle()
     val vaultItems by viewModel.vaultItems.collectAsStateWithLifecycle()
+    val installmentPlans by viewModel.installmentPlans.collectAsStateWithLifecycle()
+    val debts by viewModel.debts.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var transactionDialog by remember { mutableStateOf(false) }
     var taskDialog by remember { mutableStateOf(false) }
@@ -133,7 +137,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     ) { padding ->
         when (tab) {
             0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, recurringBills, goals, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
-            1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, viewModel::deleteTransaction)
+            1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, installmentPlans, debts, viewModel::deleteTransaction, viewModel::deleteInstallment, viewModel::deleteDebt, viewModel::addInstallment, viewModel::addDebt)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
             3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
             4 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
@@ -196,9 +200,12 @@ private fun QuickMetric(label: String, value: String) { Column(horizontalAlignme
 }
 
 @Composable
-private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>, onDelete: (String) -> Unit) {
+private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>, installments: List<InstallmentPlanEntity>, debts: List<DebtEntity>, onDelete: (String) -> Unit, onDeleteInstallment: (String) -> Unit, onDeleteDebt: (String) -> Unit, onAddInstallment: (String, Double, Double, Int, String, String) -> Unit, onAddDebt: (String, String, Double, String?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf<TransactionType?>(null) }
+    var section by rememberSaveable { mutableIntStateOf(0) }
+    var installmentDialog by remember { mutableStateOf(false) }
+    var debtDialog by remember { mutableStateOf(false) }
     val current = YearMonth.now()
     val month = transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault())) == current }
     val income = month.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
@@ -209,6 +216,16 @@ private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransactio
     }.filter { typeFilter == null || it.type == typeFilter }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Finanças", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Resumo deste mês", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) { FilterButton("Lançamentos", section == 0) { section = 0 }; FilterButton("Parcelamentos", section == 1) { section = 1 }; FilterButton("A receber", section == 2) { section = 2 } } }
+        if (section == 1) {
+            item { Button(onClick = { installmentDialog = true }) { Text("Adicionar parcelamento") } }
+            if (installments.isEmpty()) item { Empty("Nenhum parcelamento", "Cadastre compras parceladas para acompanhar o fim.") }
+            items(installments, key = { it.id }) { plan -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.description, fontWeight = FontWeight.SemiBold); Text(money(plan.installmentCents / 100.0), fontWeight = FontWeight.Bold) }; Text("${plan.installmentCount}x • ${plan.startMonth} até ${plan.endMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text("Total ${money(plan.totalCents / 100.0)}", style = MaterialTheme.typography.bodySmall); TextButton(onClick = { onDeleteInstallment(plan.id) }) { Text("Excluir") } } } }
+        } else if (section == 2) {
+            item { Button(onClick = { debtDialog = true }) { Text("Adicionar valor a receber") } }
+            if (debts.isEmpty()) item { Empty("Nada a receber", "Cadastre quem está devendo e o motivo.") }
+            items(debts, key = { it.id }) { debt -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(debt.person, fontWeight = FontWeight.SemiBold); Text(debt.description, color = MaterialTheme.colorScheme.onSurfaceVariant); debt.dueDate?.let { Text("Vencimento: $it", style = MaterialTheme.typography.bodySmall) } }; Text(money(debt.amountCents / 100.0), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold); TextButton(onClick = { onDeleteDebt(debt.id) }) { Text("Excluir") } } } }
+        } else {
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("Entradas", money(income), Modifier.weight(1f)); Summary("Saídas", money(expense), Modifier.weight(1f)); Summary("Resultado", money(income - expense), Modifier.weight(1f)) } }
         item { OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar lançamentos") }, placeholder = { Text("Descrição ou categoria") }) }
         item {
@@ -221,13 +238,28 @@ private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransactio
         item { Text("Lançamentos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (filtered.isEmpty()) item { Empty(if (transactions.isEmpty()) "Nenhum lançamento ainda" else "Nenhum resultado", if (transactions.isEmpty()) "Use o botão + para registrar uma entrada ou saída." else "Tente outra descrição ou categoria.") }
         items(filtered, key = { it.id }) { item -> TransactionItem(item, categories, onDelete) }
+        }
     }
+    if (installmentDialog) InstallmentDialog(onDismiss = { installmentDialog = false }, onSave = { d, total, value, count, start, end -> onAddInstallment(d, total, value, count, start, end); installmentDialog = false })
+    if (debtDialog) DebtDialog(onDismiss = { debtDialog = false }, onSave = { person, description, amount, due -> onAddDebt(person, description, amount, due); debtDialog = false })
 }
 
 @Composable
 private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) {
     if (selected) Button(onClick = onClick) { Text(label) }
     else OutlinedButton(onClick = onClick) { Text(label) }
+}
+
+@Composable
+private fun InstallmentDialog(onDismiss: () -> Unit, onSave: (String, Double, Double, Int, String, String) -> Unit) {
+    var description by remember { mutableStateOf("") }; var total by remember { mutableStateOf("") }; var value by remember { mutableStateOf("") }; var count by remember { mutableStateOf("") }; var start by remember { mutableStateOf("") }; var end by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Novo parcelamento") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(description, { description = it }, label = { Text("Descrição") }, singleLine = true); OutlinedTextField(total, { total = it.replace(',', '.') }, label = { Text("Valor total") }, singleLine = true); OutlinedTextField(value, { value = it.replace(',', '.') }, label = { Text("Valor da parcela") }, singleLine = true); OutlinedTextField(count, { count = it.filter(Char::isDigit) }, label = { Text("Quantidade de parcelas") }, singleLine = true); OutlinedTextField(start, { start = it }, label = { Text("Mês inicial, ex.: 2026-10") }, singleLine = true); OutlinedTextField(end, { end = it }, label = { Text("Mês final, ex.: 2027-03") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(description, total.toDoubleOrNull() ?: 0.0, value.toDoubleOrNull() ?: 0.0, count.toIntOrNull() ?: 0, start, end) }, enabled = description.isNotBlank() && (total.toDoubleOrNull() ?: 0.0) > 0 && (value.toDoubleOrNull() ?: 0.0) > 0 && (count.toIntOrNull() ?: 0) > 0 && start.isNotBlank() && end.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+}
+
+@Composable
+private fun DebtDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String?) -> Unit) {
+    var person by remember { mutableStateOf("") }; var description by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var due by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Valor a receber") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(person, { person = it }, label = { Text("Pessoa") }, singleLine = true); OutlinedTextField(description, { description = it }, label = { Text("Descrição") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor") }, singleLine = true); OutlinedTextField(due, { due = it }, label = { Text("Vencimento opcional") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(person, description, amount.toDoubleOrNull() ?: 0.0, due) }, enabled = person.isNotBlank() && description.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable private fun Summary(label: String, value: String, modifier: Modifier) = Card(modifier, shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) } }
