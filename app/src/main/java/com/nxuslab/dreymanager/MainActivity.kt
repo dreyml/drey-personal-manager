@@ -384,7 +384,7 @@ private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransactio
         if (section == 1) {
             item { Button(onClick = { installmentDialog = true }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Adicionar parcelamento") } }
             if (installments.isEmpty()) item { Empty("Nenhum parcelamento", "Cadastre compras parceladas para acompanhar o fim.") }
-            items(installments, key = { it.id }) { plan -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.description, fontWeight = FontWeight.SemiBold); Text(money(plan.installmentCents / 100.0), fontWeight = FontWeight.Bold) }; Text("${plan.paidCount}/${plan.installmentCount} pagas • vence dia ${plan.dueDay}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text("De ${plan.startMonth} até ${plan.endMonth}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); LinearProgressIndicator(progress = { plan.paidCount.toFloat() / plan.installmentCount }, modifier = Modifier.fillMaxWidth()); Row { TextButton(onClick = { onMarkInstallmentPaid(plan.id) }, enabled = plan.paidCount < plan.installmentCount) { Text("Marcar parcela paga") }; TextButton(onClick = { onEditInstallment(plan) }) { Text("Editar") }; TextButton(onClick = { onDeleteInstallment(plan.id) }) { Text("Excluir") } } } } }
+            items(installments, key = { it.id }) { plan -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.description, Modifier.weight(1f), fontWeight = FontWeight.SemiBold); Text(money(plan.installmentCents / 100.0), fontWeight = FontWeight.Bold) }; Text("${plan.paidCount}/${plan.installmentCount} pagas • vence dia ${plan.dueDay}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text("De ${plan.startMonth} até ${plan.endMonth}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); LinearProgressIndicator(progress = { plan.paidCount.toFloat() / plan.installmentCount }, modifier = Modifier.fillMaxWidth()); Button(onClick = { onMarkInstallmentPaid(plan.id) }, enabled = plan.paidCount < plan.installmentCount, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("Marcar parcela paga") }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onEditInstallment(plan) }, modifier = Modifier.weight(1f).height(44.dp)) { Text("Editar") }; TextButton(onClick = { onDeleteInstallment(plan.id) }, modifier = Modifier.height(44.dp)) { Text("Excluir") } } } } }
         } else if (section == 2) {
             item { Button(onClick = { debtDialog = true }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Adicionar valor a receber") } }
             if (debts.isEmpty()) item { Empty("Nada a receber", "Cadastre quem está devendo e o motivo.") }
@@ -421,11 +421,11 @@ private fun FinanceCalendar(month: YearMonth, eventsByDay: Map<Int, List<Calenda
             cells.chunked(7).forEach { week ->
                 Row(Modifier.fillMaxWidth()) {
                     week.forEach { day ->
-                        if (day == null) Spacer(Modifier.weight(1f).height(44.dp))
+                        if (day == null) Spacer(Modifier.weight(1f).aspectRatio(1f))
                         else {
                             val hasEvents = eventsByDay[day]?.isNotEmpty() == true
                             Surface(
-                                modifier = Modifier.weight(1f).height(44.dp).padding(2.dp).clickable { onDaySelected(day) },
+                                modifier = Modifier.weight(1f).aspectRatio(1f).padding(2.dp).clickable { onDaySelected(day) },
                                 shape = MaterialTheme.shapes.medium,
                                 color = when {
                                     day == selectedDay -> MaterialTheme.colorScheme.primary
@@ -440,7 +440,7 @@ private fun FinanceCalendar(month: YearMonth, eventsByDay: Map<Int, List<Calenda
                             }
                         }
                     }
-                    repeat(7 - week.size) { Spacer(Modifier.weight(1f).height(44.dp)) }
+                    repeat(7 - week.size) { Spacer(Modifier.weight(1f).aspectRatio(1f)) }
                 }
             }
             Text("• Dia com movimentação, conta, parcela ou valor a receber", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -465,9 +465,9 @@ private fun DebtDialog(onDismiss: () -> Unit, onSave: (String, String, Double, S
 @Composable private fun Summary(label: String, value: String, modifier: Modifier) = Card(modifier, shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) } }
 
 @Composable private fun TransactionItem(item: MoneyTransaction, categories: List<CategoryEntity>, onDelete: (String) -> Unit, onEdit: (MoneyTransaction) -> Unit) = Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
-    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(item.description, fontWeight = FontWeight.SemiBold); Text(categories.firstOrNull { it.id == item.categoryId }?.name ?: if (item.type == TransactionType.INCOME) "Entrada" else "Saída", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Column(horizontalAlignment = Alignment.End) { Text((if (item.type == TransactionType.INCOME) "+ " else "− ") + money(item.amount), fontWeight = FontWeight.Bold, color = if (item.type == TransactionType.INCOME) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error); Row { TextButton(onClick = { onEdit(item) }) { Text("Editar") }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } }
+    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(item.description, fontWeight = FontWeight.SemiBold); Text(categories.firstOrNull { it.id == item.categoryId }?.name ?: if (item.type == TransactionType.INCOME) "Entrada" else "Saída", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text((if (item.type == TransactionType.INCOME) "+ " else "− ") + money(item.amount), fontWeight = FontWeight.Bold, color = if (item.type == TransactionType.INCOME) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onEdit(item) }, modifier = Modifier.weight(1f).height(42.dp)) { Text("Editar") }; TextButton(onClick = { onDelete(item.id) }, modifier = Modifier.height(42.dp)) { Text("Excluir") } }
     }
 }
 
@@ -628,11 +628,8 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textDecoration = if (task.completed) TextDecoration.LineThrough else null)
                 task.dueDate?.let { Text(if (overdue) "Atrasada • prazo: $it" else "Prazo: $it", style = MaterialTheme.typography.bodyMedium, color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { onToggle(task.id) }, modifier = Modifier.weight(1f).height(46.dp)) { Text(if (task.completed) "Reabrir" else "Concluir") }
-                    OutlinedButton(onClick = { onEdit(task) }, modifier = Modifier.height(46.dp)) { Text("Editar") }
-                    TextButton(onClick = { onDelete(task.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") }
-                }
+                Button(onClick = { onToggle(task.id) }, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text(if (task.completed) "Reabrir tarefa" else "Concluir tarefa") }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onEdit(task) }, modifier = Modifier.weight(1f).height(44.dp)) { Text("Editar") }; TextButton(onClick = { onDelete(task.id) }, modifier = Modifier.height(44.dp)) { Text("Excluir") } }
             }
         } }
     }
@@ -674,7 +671,7 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
         }
         item { Text("Contas recorrentes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (bills.isEmpty()) item { Empty("Nenhuma conta recorrente", "Use o botão + para registrar uma cobrança mensal.") }
-        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Vencimento todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(categories.firstOrNull { it.id == bill.categoryId }?.name ?: "Sem categoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onSetBillActive(bill.id, false) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("Pausar") }; OutlinedButton(onClick = { onEditBill(bill) }, modifier = Modifier.height(46.dp)) { Text("Editar") }; TextButton(onClick = { onDeleteBill(bill.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") } } } } }
+        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Vencimento todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(categories.firstOrNull { it.id == bill.categoryId }?.name ?: "Sem categoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }; OutlinedButton(onClick = { onSetBillActive(bill.id, false) }, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("Pausar conta") }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onEditBill(bill) }, modifier = Modifier.weight(1f).height(44.dp)) { Text("Editar") }; TextButton(onClick = { onDeleteBill(bill.id) }, modifier = Modifier.height(44.dp)) { Text("Excluir") } } } } }
     }
     contributionGoalId?.let { goalId -> ContributionDialog(onDismiss = { contributionGoalId = null }, onSave = { value -> onAddContribution(goalId, value); contributionGoalId = null }) }
 }
