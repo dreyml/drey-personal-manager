@@ -44,6 +44,7 @@ import com.nxuslab.dreymanager.data.DebtEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.ui.DreyManagerTheme
+import com.nxuslab.dreymanager.ui.screens.HomeScreen
 import com.nxuslab.dreymanager.notifications.ReminderWorker
 import com.nxuslab.dreymanager.notifications.NotificationHelper
 import java.util.concurrent.TimeUnit
@@ -184,8 +185,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     )
 }
 
-@Composable
-private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
+/*private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
     val balance = transactions.sumOf { if (it.type == TransactionType.INCOME) it.amount else -it.amount }
     val income = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     val expense = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
@@ -204,7 +204,7 @@ private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>,
         item { Shortcut("Restaurar backup", "Importar um arquivo JSON salvo", importData) }
         item { Text("Privacidade em primeiro lugar", fontWeight = FontWeight.SemiBold); Text("Os dados desta versão ficam protegidos e salvos somente neste aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
-}
+}*/
 
 @Composable
 private fun QuickMetric(label: String, value: String) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
@@ -382,13 +382,13 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
 
 @Composable private fun Empty(title: String, body: String) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp)) { Text(title, fontWeight = FontWeight.SemiBold); Text(body) } }
 
-@Composable private fun UpdateNotice(update: UpdateState.Available) {
+/*@Composable private fun UpdateNotice(update: UpdateState.Available) {
     val context = LocalContext.current
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Atualização disponível: ${update.manifest.versionName}", fontWeight = FontWeight.SemiBold); Text(update.manifest.message)
         Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.manifest.downloadUrl))) }) { Text("Ver atualização") }
     } }
-}
+}*/
 
 @Composable private fun TransactionDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, TransactionType, String?) -> Unit) {
     var description by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var type by remember { mutableStateOf(TransactionType.EXPENSE) }; var categoryId by remember { mutableStateOf<String?>(null) }; var categoryMenu by remember { mutableStateOf(false) }
@@ -434,4 +434,4 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova tarefa") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Título") }, singleLine = true); OutlinedTextField(date, { date = it }, label = { Text("Prazo opcional, ex.: 10/10") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(title, date) }, enabled = title.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
-private fun money(value: Double): String = NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(value)
+internal fun money(value: Double): String = NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(value)
