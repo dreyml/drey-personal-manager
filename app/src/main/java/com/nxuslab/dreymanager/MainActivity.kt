@@ -16,9 +16,13 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -54,6 +58,8 @@ import com.nxuslab.dreymanager.data.RecurringBillEntity
 import com.nxuslab.dreymanager.data.VaultItemEntity
 import com.nxuslab.dreymanager.data.InstallmentPlanEntity
 import com.nxuslab.dreymanager.data.DebtEntity
+import com.nxuslab.dreymanager.data.BankEntity
+import com.nxuslab.dreymanager.data.SavingsJarEntity
 import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.update.UpdateState
 import com.nxuslab.dreymanager.ui.DreyManagerTheme
@@ -67,8 +73,12 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.TextStyle
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
+private data class CalendarEvent(val title: String, val amount: Double? = null, val kind: String)
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +95,61 @@ class MainActivity : FragmentActivity() {
             "drey-daily-reminders", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<ReminderWorker>(1, TimeUnit.DAYS).build(),
         )
-        setContent { DreyManagerTheme { PersonalManagerApp() } }
+        setContent { DreyManagerTheme { AppUnlockGate { PersonalManagerApp() } } }
+    }
+}
+
+@Composable
+private fun AppUnlockGate(content: @Composable () -> Unit) {
+    var stage by remember { mutableStateOf("locked") }
+    var authenticationError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+
+    fun requestAuthentication() {
+        val host = activity ?: return
+        authenticationError = null
+        BiometricPrompt(host, host.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { stage = "intro" }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) authenticationError = errString.toString()
+            }
+        }).authenticate(
+            BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Abrir NxusLife")
+                .setSubtitle("Confirme sua digital para continuar")
+                .setNegativeButtonText("Cancelar")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build(),
+        )
+    }
+
+    LaunchedEffect(Unit) { requestAuthentication() }
+    LaunchedEffect(stage) { if (stage == "intro") { delay(950); stage = "open" } }
+
+    when (stage) {
+        "open" -> content()
+        "intro" -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            AnimatedVisibility(visible = true, enter = fadeIn() + scaleIn(initialScale = 0.78f)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Image(painterResource(R.drawable.nxuslife_logo), "NxusLife", Modifier.size(116.dp).padding(18.dp))
+                    }
+                    Text("Bem-vindo, Andrey", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        else -> Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+            Card(shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Image(painterResource(R.drawable.nxuslife_logo), "NxusLife", Modifier.size(76.dp))
+                    Text("Bem-vindo, Andrey", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Use sua digital para abrir o seu espaço.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    authenticationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Button(onClick = ::requestAuthentication, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Desbloquear com digital") }
+                }
+            }
+        }
     }
 }
 
@@ -118,9 +182,18 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     val vaultItems by viewModel.vaultItems.collectAsStateWithLifecycle()
     val installmentPlans by viewModel.installmentPlans.collectAsStateWithLifecycle()
     val debts by viewModel.debts.collectAsStateWithLifecycle()
+    val banks by viewModel.banks.collectAsStateWithLifecycle()
+    val savingsJars by viewModel.savingsJars.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var transactionDialog by remember { mutableStateOf(false) }
     var taskDialog by remember { mutableStateOf(false) }
+    var editingTransaction by remember { mutableStateOf<MoneyTransaction?>(null) }
+    var editingTask by remember { mutableStateOf<PersonalTask?>(null) }
+    var editingInstallment by remember { mutableStateOf<InstallmentPlanEntity?>(null) }
+    var editingDebt by remember { mutableStateOf<DebtEntity?>(null) }
+    var editingGoal by remember { mutableStateOf<GoalEntity?>(null) }
+    var editingBill by remember { mutableStateOf<RecurringBillEntity?>(null) }
+    var editingVaultItem by remember { mutableStateOf<VaultItemEntity?>(null) }
     var recurringDialog by remember { mutableStateOf(false) }
     var goalDialog by remember { mutableStateOf(false) }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
@@ -161,13 +234,15 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     ) { padding ->
         when (tab) {
             0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, recurringBills, goals, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
-            1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, installmentPlans, debts, viewModel::deleteTransaction, viewModel::deleteInstallment, viewModel::markInstallmentPaid, viewModel::deleteDebt, viewModel::setDebtSettled, viewModel::addInstallment, viewModel::addDebt)
-            2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, viewModel::addGoalContribution, viewModel::setRecurringBillActive, viewModel::deleteRecurringBill, { goalDialog = true })
-            3 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
+            1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, recurringBills, installmentPlans, debts, viewModel::deleteTransaction, { editingTransaction = it }, { editingInstallment = it }, viewModel::deleteInstallment, viewModel::markInstallmentPaid, { editingDebt = it }, viewModel::deleteDebt, viewModel::setDebtSettled, viewModel::addInstallment, viewModel::addDebt)
+            2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, viewModel::addGoalContribution, { editingGoal = it }, viewModel::setRecurringBillActive, viewModel::deleteRecurringBill, { editingBill = it }, { goalDialog = true })
+            3 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask, { editingTask = it })
             4 -> when (moreDestination) {
                 "reports" -> ReportsScreen(Modifier.padding(padding), transactions, categories)
-                "vault" -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel::deleteVaultItem, viewModel::addVaultItem)
-                else -> MoreScreen(Modifier.padding(padding), onReports = { moreDestination = "reports" }, onVault = { moreDestination = "vault" })
+                "vault" -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel::deleteVaultItem, viewModel::addVaultItem, { editingVaultItem = it })
+                "banks" -> BanksScreen(Modifier.padding(padding), banks, viewModel::addBank, viewModel::updateBank, viewModel::deleteBank)
+                "jars" -> SavingsJarsScreen(Modifier.padding(padding), savingsJars, viewModel::addSavingsJar, viewModel::updateSavingsJar, viewModel::deleteSavingsJar)
+                else -> MoreScreen(Modifier.padding(padding), onReports = { moreDestination = "reports" }, onVault = { moreDestination = "vault" }, onBanks = { moreDestination = "banks" }, onJars = { moreDestination = "jars" })
             }
         }
     }
@@ -176,10 +251,18 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         categories = categories,
         onSave = { description, value, type, categoryId -> viewModel.addTransaction(description, value, type, categoryId); transactionDialog = false },
     )
+    editingTransaction?.let { transaction -> TransactionDialog(
+        onDismiss = { editingTransaction = null }, categories = categories, existing = transaction,
+        onSave = { description, value, type, categoryId -> viewModel.updateTransaction(transaction.id, description, value, type, categoryId); editingTransaction = null },
+    ) }
     if (taskDialog) TaskDialog(
         onDismiss = { taskDialog = false },
         onSave = { title, due -> viewModel.addTask(title, due); taskDialog = false },
     )
+    editingTask?.let { task -> TaskDialog(
+        onDismiss = { editingTask = null }, existing = task,
+        onSave = { title, due -> viewModel.updateTask(task.id, title, due); editingTask = null },
+    ) }
     if (recurringDialog) RecurringDialog(
         onDismiss = { recurringDialog = false },
         categories = categories,
@@ -189,6 +272,11 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
         onDismiss = { goalDialog = false },
         onSave = { title, target, deadline -> viewModel.addGoal(title, target, deadline); goalDialog = false },
     )
+    editingInstallment?.let { plan -> InstallmentDialog(onDismiss = { editingInstallment = null }, existing = plan, onSave = { description, total, count, firstDue -> viewModel.updateInstallment(plan, description, total, count, firstDue); editingInstallment = null }) }
+    editingDebt?.let { debt -> DebtDialog(onDismiss = { editingDebt = null }, existing = debt, onSave = { person, description, amount, due -> viewModel.updateDebt(debt, person, description, amount, due); editingDebt = null }) }
+    editingGoal?.let { goal -> GoalDialog(onDismiss = { editingGoal = null }, existing = goal, onSave = { title, target, deadline -> viewModel.updateGoal(goal, title, target, deadline); editingGoal = null }) }
+    editingBill?.let { bill -> RecurringDialog(categories = categories, onDismiss = { editingBill = null }, existing = bill, onSave = { title, amount, day, categoryId -> viewModel.updateRecurringBill(bill, title, amount, day, categoryId); editingBill = null }) }
+    editingVaultItem?.let { item -> VaultItemDialog(onDismiss = { editingVaultItem = null }, existing = item, onSave = { title, username, secret -> viewModel.updateVaultItem(item, title, username, secret, null); editingVaultItem = null }) }
 }
 
 /*private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
@@ -226,40 +314,90 @@ private fun QuickMetric(label: String, value: String) { Column(horizontalAlignme
 }
 
 @Composable
-private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>, installments: List<InstallmentPlanEntity>, debts: List<DebtEntity>, onDelete: (String) -> Unit, onDeleteInstallment: (String) -> Unit, onMarkInstallmentPaid: (String) -> Unit, onDeleteDebt: (String) -> Unit, onSetDebtSettled: (String, Boolean) -> Unit, onAddInstallment: (String, Double, Int, String) -> Unit, onAddDebt: (String, String, Double, String?) -> Unit) {
+private fun FinanceScreen(modifier: Modifier, transactions: List<MoneyTransaction>, categories: List<CategoryEntity>, recurringBills: List<RecurringBillEntity>, installments: List<InstallmentPlanEntity>, debts: List<DebtEntity>, onDelete: (String) -> Unit, onEdit: (MoneyTransaction) -> Unit, onEditInstallment: (InstallmentPlanEntity) -> Unit, onDeleteInstallment: (String) -> Unit, onMarkInstallmentPaid: (String) -> Unit, onEditDebt: (DebtEntity) -> Unit, onDeleteDebt: (String) -> Unit, onSetDebtSettled: (String, Boolean) -> Unit, onAddInstallment: (String, Double, Int, String) -> Unit, onAddDebt: (String, String, Double, String?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf<TransactionType?>(null) }
     var section by rememberSaveable { mutableIntStateOf(0) }
     var installmentDialog by remember { mutableStateOf(false) }
     var debtDialog by remember { mutableStateOf(false) }
     val current = YearMonth.now()
-    val month = transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault())) == current }
+    var selectedMonth by rememberSaveable { mutableStateOf(current.toString()) }
+    val displayedMonth = YearMonth.parse(selectedMonth)
+    val isFuture = displayedMonth.isAfter(current)
+    val month = transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault())) == displayedMonth }
     val income = month.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     val expense = month.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-    val filtered = transactions.filter { row ->
+    val projectedBills = if (isFuture) recurringBills.sumOf { it.amountCents / 100.0 } else 0.0
+    val projectedInstallments = if (isFuture) installments.filter { plan ->
+        val start = runCatching { YearMonth.parse(plan.startMonth) }.getOrNull()
+        val end = runCatching { YearMonth.parse(plan.endMonth) }.getOrNull()
+        start != null && end != null && displayedMonth in start..end
+    }.sumOf { it.installmentCents / 100.0 } else 0.0
+    val projectedExpense = projectedBills + projectedInstallments
+    val eventsByDay = remember(displayedMonth, transactions, recurringBills, installments, debts) {
+        buildMap<Int, MutableList<CalendarEvent>> {
+            transactions.filter { YearMonth.from(Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault())) == displayedMonth }.forEach { transaction ->
+                val day = Instant.ofEpochMilli(transaction.createdAt).atZone(ZoneId.systemDefault()).dayOfMonth
+                getOrPut(day) { mutableListOf() }.add(CalendarEvent(transaction.description, transaction.amount, if (transaction.type == TransactionType.INCOME) "Entrada" else "Saída"))
+            }
+            recurringBills.forEach { bill -> if (bill.dayOfMonth <= displayedMonth.lengthOfMonth()) getOrPut(bill.dayOfMonth) { mutableListOf() }.add(CalendarEvent(bill.title, bill.amountCents / 100.0, "Conta")) }
+            installments.filter { plan ->
+                val start = runCatching { YearMonth.parse(plan.startMonth) }.getOrNull(); val end = runCatching { YearMonth.parse(plan.endMonth) }.getOrNull()
+                start != null && end != null && displayedMonth in start..end && plan.dueDay <= displayedMonth.lengthOfMonth()
+            }.forEach { plan -> getOrPut(plan.dueDay) { mutableListOf() }.add(CalendarEvent("${plan.description} • parcela", plan.installmentCents / 100.0, "Parcela")) }
+            debts.filter { !it.settled && it.dueDate?.let { date -> runCatching { YearMonth.from(LocalDate.parse(date)) == displayedMonth }.getOrDefault(false) } == true }.forEach { debt ->
+                val day = LocalDate.parse(debt.dueDate).dayOfMonth
+                getOrPut(day) { mutableListOf() }.add(CalendarEvent("Receber de ${debt.person}", debt.amountCents / 100.0, "A receber"))
+            }
+        }
+    }
+    var selectedDay by rememberSaveable(selectedMonth) { mutableIntStateOf(LocalDate.now().takeIf { YearMonth.from(it) == displayedMonth }?.dayOfMonth ?: 1) }
+    val filtered = (if (isFuture) emptyList() else month).filter { row ->
         query.isBlank() || row.description.contains(query, ignoreCase = true) ||
             categories.firstOrNull { it.id == row.categoryId }?.name?.contains(query, ignoreCase = true) == true
     }.filter { typeFilter == null || it.type == typeFilter }
     LazyColumn(modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { Text("Finanças", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Seu dinheiro organizado, sem complicação.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { TextButton(onClick = { selectedMonth = displayedMonth.minusMonths(1).toString() }, modifier = Modifier.height(44.dp)) { Text("‹") }; Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(displayedMonth.month.getDisplayName(TextStyle.FULL, Locale("pt", "BR")).replaceFirstChar { it.titlecase(Locale("pt", "BR")) }, fontWeight = FontWeight.Bold); Text(displayedMonth.year.toString(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }; TextButton(onClick = { selectedMonth = displayedMonth.plusMonths(1).toString() }, modifier = Modifier.height(44.dp)) { Text("›") } } } }
+        item { FinanceCalendar(displayedMonth, eventsByDay, selectedDay, onDaySelected = { selectedDay = it }) }
+        eventsByDay[selectedDay]?.takeIf { it.isNotEmpty() }?.let { dayEvents ->
+            item {
+                Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Dia $selectedDay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        dayEvents.forEach { event ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(event.title, fontWeight = FontWeight.SemiBold)
+                                    Text(event.kind, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                event.amount?.let { amount ->
+                                    Text(money(amount), fontWeight = FontWeight.Bold, color = if (event.kind == "Entrada" || event.kind == "A receber") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         item { ScrollableTabRow(selectedTabIndex = section, edgePadding = 0.dp) { listOf("Lançamentos", "Parcelamentos", "A receber").forEachIndexed { index, title -> Tab(selected = section == index, onClick = { section = index }, text = { Text(title) }) } } }
         if (section == 1) {
             item { Button(onClick = { installmentDialog = true }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Adicionar parcelamento") } }
             if (installments.isEmpty()) item { Empty("Nenhum parcelamento", "Cadastre compras parceladas para acompanhar o fim.") }
-            items(installments, key = { it.id }) { plan -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.description, fontWeight = FontWeight.SemiBold); Text(money(plan.installmentCents / 100.0), fontWeight = FontWeight.Bold) }; Text("${plan.paidCount}/${plan.installmentCount} pagas • vence dia ${plan.dueDay}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text("De ${plan.startMonth} até ${plan.endMonth}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); LinearProgressIndicator(progress = { plan.paidCount.toFloat() / plan.installmentCount }, modifier = Modifier.fillMaxWidth()); Row { TextButton(onClick = { onMarkInstallmentPaid(plan.id) }, enabled = plan.paidCount < plan.installmentCount) { Text("Marcar parcela paga") }; TextButton(onClick = { onDeleteInstallment(plan.id) }) { Text("Excluir") } } } } }
+            items(installments, key = { it.id }) { plan -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(plan.description, fontWeight = FontWeight.SemiBold); Text(money(plan.installmentCents / 100.0), fontWeight = FontWeight.Bold) }; Text("${plan.paidCount}/${plan.installmentCount} pagas • vence dia ${plan.dueDay}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text("De ${plan.startMonth} até ${plan.endMonth}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); LinearProgressIndicator(progress = { plan.paidCount.toFloat() / plan.installmentCount }, modifier = Modifier.fillMaxWidth()); Row { TextButton(onClick = { onMarkInstallmentPaid(plan.id) }, enabled = plan.paidCount < plan.installmentCount) { Text("Marcar parcela paga") }; TextButton(onClick = { onEditInstallment(plan) }) { Text("Editar") }; TextButton(onClick = { onDeleteInstallment(plan.id) }) { Text("Excluir") } } } } }
         } else if (section == 2) {
             item { Button(onClick = { debtDialog = true }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Adicionar valor a receber") } }
             if (debts.isEmpty()) item { Empty("Nada a receber", "Cadastre quem está devendo e o motivo.") }
-            items(debts, key = { it.id }) { debt -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(debt.person, fontWeight = FontWeight.SemiBold); Text(debt.description, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(if (debt.settled) "Recebido" else debt.dueDate?.let { "Vencimento: $it" } ?: "Sem vencimento", style = MaterialTheme.typography.bodySmall) }; Column(horizontalAlignment = Alignment.End) { Text(money(debt.amountCents / 100.0), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold); TextButton(onClick = { onSetDebtSettled(debt.id, !debt.settled) }) { Text(if (debt.settled) "Reabrir" else "Marcar recebido") }; TextButton(onClick = { onDeleteDebt(debt.id) }) { Text("Excluir") } } } } }
+            items(debts, key = { it.id }) { debt -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(debt.person, fontWeight = FontWeight.SemiBold); Text(debt.description, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(if (debt.settled) "Recebido" else debt.dueDate?.let { "Vencimento: $it" } ?: "Sem vencimento", style = MaterialTheme.typography.bodySmall) }; Column(horizontalAlignment = Alignment.End) { Text(money(debt.amountCents / 100.0), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold); TextButton(onClick = { onSetDebtSettled(debt.id, !debt.settled) }) { Text(if (debt.settled) "Reabrir" else "Marcar recebido") }; TextButton(onClick = { onEditDebt(debt) }) { Text("Editar") }; TextButton(onClick = { onDeleteDebt(debt.id) }) { Text("Excluir") } } } } }
         } else {
-        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("RESULTADO DO MÊS", style = MaterialTheme.typography.labelMedium); Text(money(income - expense), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Entradas", style = MaterialTheme.typography.labelSmall); Text(money(income), fontWeight = FontWeight.SemiBold) }; Column(horizontalAlignment = Alignment.End) { Text("Saídas", style = MaterialTheme.typography.labelSmall); Text(money(expense), fontWeight = FontWeight.SemiBold) } } } } }
+        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(if (isFuture) "PREVISÃO DO MÊS" else "RESULTADO DO MÊS", style = MaterialTheme.typography.labelMedium); Text(money(if (isFuture) -projectedExpense else income - expense), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(if (isFuture) "Contas" else "Entradas", style = MaterialTheme.typography.labelSmall); Text(money(if (isFuture) projectedBills else income), fontWeight = FontWeight.SemiBold) }; Column(horizontalAlignment = Alignment.End) { Text(if (isFuture) "Parcelas" else "Saídas", style = MaterialTheme.typography.labelSmall); Text(money(if (isFuture) projectedInstallments else expense), fontWeight = FontWeight.SemiBold) } }; if (isFuture) Text("Valores previstos; lançamentos reais aparecerão quando forem registrados.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer) } } }
         item { OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Buscar lançamentos") }, placeholder = { Text("Descrição ou categoria") }) }
         item {
             ScrollableTabRow(selectedTabIndex = when (typeFilter) { null -> 0; TransactionType.INCOME -> 1; TransactionType.EXPENSE -> 2 }, edgePadding = 0.dp) { listOf("Todos", "Entradas", "Saídas").forEachIndexed { index, title -> Tab(selected = (index == 0 && typeFilter == null) || (index == 1 && typeFilter == TransactionType.INCOME) || (index == 2 && typeFilter == TransactionType.EXPENSE), onClick = { typeFilter = when (index) { 1 -> TransactionType.INCOME; 2 -> TransactionType.EXPENSE; else -> null } }, text = { Text(title) }) } }
         }
         item { Text("Lançamentos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (filtered.isEmpty()) item { Empty(if (transactions.isEmpty()) "Nenhum lançamento ainda" else "Nenhum resultado", if (transactions.isEmpty()) "Use o botão + para registrar uma entrada ou saída." else "Tente outra descrição ou categoria.") }
-        items(filtered, key = { it.id }) { item -> TransactionItem(item, categories, onDelete) }
+        items(filtered, key = { it.id }) { item -> TransactionItem(item, categories, onDelete, onEdit) }
         }
     }
     if (installmentDialog) InstallmentDialog(onDismiss = { installmentDialog = false }, onSave = { d, total, count, start -> onAddInstallment(d, total, count, start); installmentDialog = false })
@@ -273,25 +411,63 @@ private fun FilterButton(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun InstallmentDialog(onDismiss: () -> Unit, onSave: (String, Double, Int, String) -> Unit) {
-    var description by remember { mutableStateOf("") }; var total by remember { mutableStateOf("") }; var count by remember { mutableStateOf("") }; var firstDueDate by remember { mutableStateOf(LocalDate.now().toString()) }
-    val parsedDate = runCatching { LocalDate.parse(firstDueDate) }.getOrNull()
-    val end = parsedDate?.plusMonths((count.toIntOrNull() ?: 1).coerceAtLeast(1) - 1L)
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Novo parcelamento") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descrição") }, singleLine = true); OutlinedTextField(total, { total = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor total") }, singleLine = true); OutlinedTextField(count, { count = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(), label = { Text("Quantidade de parcelas") }, singleLine = true); DateField("Primeiro vencimento", firstDueDate) { firstDueDate = it }; val parcel = (total.toDoubleOrNull() ?: 0.0) / (count.toIntOrNull() ?: 1); Text("Parcela estimada: ${money(parcel)}", color = MaterialTheme.colorScheme.onSurfaceVariant); end?.let { Text("Última parcela: ${it.dayOfMonth}/${it.monthValue.toString().padStart(2, '0')}/${it.year}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) } } }, confirmButton = { Button(onClick = { onSave(description, total.toDoubleOrNull() ?: 0.0, count.toIntOrNull() ?: 0, firstDueDate) }, modifier = Modifier.height(48.dp), enabled = description.isNotBlank() && (total.toDoubleOrNull() ?: 0.0) > 0 && (count.toIntOrNull() ?: 0) > 0 && parsedDate != null) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) { Text("Cancelar") } })
+private fun FinanceCalendar(month: YearMonth, eventsByDay: Map<Int, List<CalendarEvent>>, selectedDay: Int, onDaySelected: (Int) -> Unit) {
+    val leadingBlanks = month.atDay(1).dayOfWeek.value - 1
+    val cells: List<Int?> = List(leadingBlanks) { null } + (1..month.lengthOfMonth()).toList()
+    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Calendário financeiro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth()) { listOf("SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM").forEach { label -> Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center) } }
+            cells.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth()) {
+                    week.forEach { day ->
+                        if (day == null) Spacer(Modifier.weight(1f).height(44.dp))
+                        else {
+                            val hasEvents = eventsByDay[day]?.isNotEmpty() == true
+                            Surface(
+                                modifier = Modifier.weight(1f).height(44.dp).padding(2.dp).clickable { onDaySelected(day) },
+                                shape = MaterialTheme.shapes.medium,
+                                color = when {
+                                    day == selectedDay -> MaterialTheme.colorScheme.primary
+                                    hasEvents -> MaterialTheme.colorScheme.primaryContainer
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                },
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Text(day.toString(), style = MaterialTheme.typography.labelMedium, color = if (day == selectedDay) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                                    if (hasEvents) Text("•", color = if (day == selectedDay) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                    repeat(7 - week.size) { Spacer(Modifier.weight(1f).height(44.dp)) }
+                }
+            }
+            Text("• Dia com movimentação, conta, parcela ou valor a receber", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable
-private fun DebtDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String?) -> Unit) {
-    var person by remember { mutableStateOf("") }; var description by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var due by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Valor a receber") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(person, { person = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Pessoa") }, singleLine = true); OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descrição") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor") }, singleLine = true); DateField("Vencimento opcional", due) { due = it } } }, confirmButton = { Button(onClick = { onSave(person, description, amount.toDoubleOrNull() ?: 0.0, due) }, modifier = Modifier.height(48.dp), enabled = person.isNotBlank() && description.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) { Text("Cancelar") } })
+private fun InstallmentDialog(onDismiss: () -> Unit, onSave: (String, Double, Int, String) -> Unit, existing: InstallmentPlanEntity? = null) {
+    var description by remember(existing?.id) { mutableStateOf(existing?.description.orEmpty()) }; var total by remember(existing?.id) { mutableStateOf(existing?.totalCents?.div(100.0)?.toString().orEmpty()) }; var count by remember(existing?.id) { mutableStateOf(existing?.installmentCount?.toString().orEmpty()) }; var firstDueDate by remember(existing?.id) { mutableStateOf(existing?.let { "${it.startMonth}-${it.dueDay.toString().padStart(2, '0')}" } ?: LocalDate.now().toString()) }
+    val parsedDate = runCatching { LocalDate.parse(firstDueDate) }.getOrNull()
+    val end = parsedDate?.plusMonths((count.toIntOrNull() ?: 1).coerceAtLeast(1) - 1L)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Novo parcelamento" else "Editar parcelamento") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descrição") }, singleLine = true); OutlinedTextField(total, { total = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor total") }, singleLine = true); OutlinedTextField(count, { count = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(), label = { Text("Quantidade de parcelas") }, singleLine = true); DateField("Primeiro vencimento", firstDueDate) { firstDueDate = it }; val parcel = (total.toDoubleOrNull() ?: 0.0) / (count.toIntOrNull() ?: 1); Text("Parcela estimada: ${money(parcel)}", color = MaterialTheme.colorScheme.onSurfaceVariant); end?.let { Text("Última parcela: ${it.dayOfMonth}/${it.monthValue.toString().padStart(2, '0')}/${it.year}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) } } }, confirmButton = { Button(onClick = { onSave(description, total.toDoubleOrNull() ?: 0.0, count.toIntOrNull() ?: 0, firstDueDate) }, modifier = Modifier.height(48.dp), enabled = description.isNotBlank() && (total.toDoubleOrNull() ?: 0.0) > 0 && (count.toIntOrNull() ?: 0) > 0 && parsedDate != null) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) { Text("Cancelar") } })
+}
+
+@Composable
+private fun DebtDialog(onDismiss: () -> Unit, onSave: (String, String, Double, String?) -> Unit, existing: DebtEntity? = null) {
+    var person by remember(existing?.id) { mutableStateOf(existing?.person.orEmpty()) }; var description by remember(existing?.id) { mutableStateOf(existing?.description.orEmpty()) }; var amount by remember(existing?.id) { mutableStateOf(existing?.amountCents?.div(100.0)?.toString().orEmpty()) }; var due by remember(existing?.id) { mutableStateOf(existing?.dueDate.orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Valor a receber" else "Editar valor a receber") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(person, { person = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Pessoa") }, singleLine = true); OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descrição") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor") }, singleLine = true); DateField("Vencimento opcional", due) { due = it } } }, confirmButton = { Button(onClick = { onSave(person, description, amount.toDoubleOrNull() ?: 0.0, due) }, modifier = Modifier.height(48.dp), enabled = person.isNotBlank() && description.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) { Text("Cancelar") } })
 }
 
 @Composable private fun Summary(label: String, value: String, modifier: Modifier) = Card(modifier, shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) } }
 
-@Composable private fun TransactionItem(item: MoneyTransaction, categories: List<CategoryEntity>, onDelete: (String) -> Unit) = Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+@Composable private fun TransactionItem(item: MoneyTransaction, categories: List<CategoryEntity>, onDelete: (String) -> Unit, onEdit: (MoneyTransaction) -> Unit) = Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
     Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(item.description, fontWeight = FontWeight.SemiBold); Text(categories.firstOrNull { it.id == item.categoryId }?.name ?: if (item.type == TransactionType.INCOME) "Entrada" else "Saída", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Column(horizontalAlignment = Alignment.End) { Text((if (item.type == TransactionType.INCOME) "+ " else "− ") + money(item.amount), fontWeight = FontWeight.Bold, color = if (item.type == TransactionType.INCOME) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error); TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } }
+        Column(horizontalAlignment = Alignment.End) { Text((if (item.type == TransactionType.INCOME) "+ " else "− ") + money(item.amount), fontWeight = FontWeight.Bold, color = if (item.type == TransactionType.INCOME) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error); Row { TextButton(onClick = { onEdit(item) }) { Text("Editar") }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } }
     }
 }
 
@@ -341,7 +517,45 @@ private fun EmptyState(message: String) {
 }
 
 @Composable
-private fun MoreScreen(modifier: Modifier, onReports: () -> Unit, onVault: () -> Unit) {
+private fun BanksScreen(modifier: Modifier, banks: List<BankEntity>, onAdd: (String, Double) -> Unit, onUpdate: (BankEntity, String, Double) -> Unit, onDelete: (String) -> Unit) {
+    var dialog by remember { mutableStateOf(false) }; var editing by remember { mutableStateOf<BankEntity?>(null) }
+    LazyColumn(modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Text("Bancos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Saldos que você escolheu acompanhar.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(20.dp)) { Text("TOTAL CADASTRADO", style = MaterialTheme.typography.labelMedium); Text(money(banks.sumOf { it.balanceCents } / 100.0), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) } } }
+        item { Button(onClick = { dialog = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Adicionar banco") } }
+        if (banks.isEmpty()) item { Empty("Nenhum banco cadastrado", "Adicione os bancos que deseja acompanhar.") }
+        items(banks, key = { it.id }) { bank -> Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(bank.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Saldo informado", color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { Text(money(bank.balanceCents / 100.0), fontWeight = FontWeight.Bold); TextButton(onClick = { editing = bank }) { Text("Editar") }; TextButton(onClick = { onDelete(bank.id) }) { Text("Excluir") } } } } }
+    }
+    if (dialog) BankDialog(onDismiss = { dialog = false }, onSave = { name, balance -> onAdd(name, balance); dialog = false })
+    editing?.let { bank -> BankDialog(existing = bank, onDismiss = { editing = null }, onSave = { name, balance -> onUpdate(bank, name, balance); editing = null }) }
+}
+
+@Composable
+private fun SavingsJarsScreen(modifier: Modifier, jars: List<SavingsJarEntity>, onAdd: (String, Double, Double?) -> Unit, onUpdate: (SavingsJarEntity, String, Double, Double?) -> Unit, onDelete: (String) -> Unit) {
+    var dialog by remember { mutableStateOf(false) }; var editing by remember { mutableStateOf<SavingsJarEntity?>(null) }
+    LazyColumn(modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Text("Cofrinhos", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Reservas separadas para os seus objetivos.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) { Column(Modifier.padding(20.dp)) { Text("TOTAL GUARDADO", style = MaterialTheme.typography.labelMedium); Text(money(jars.sumOf { it.currentCents } / 100.0), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) } } }
+        item { Button(onClick = { dialog = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Adicionar cofrinho") } }
+        if (jars.isEmpty()) item { Empty("Nenhum cofrinho criado", "Crie reservas para seus planos e objetivos.") }
+        items(jars, key = { it.id }) { jar -> val progress = jar.targetCents?.takeIf { it > 0 }?.let { (jar.currentCents.toFloat() / it).coerceIn(0f, 1f) }; Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(jar.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(money(jar.currentCents / 100.0), fontWeight = FontWeight.Bold) }; progress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()); Text("Meta: ${money((jar.targetCents ?: 0) / 100.0)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Row { TextButton(onClick = { editing = jar }) { Text("Editar") }; TextButton(onClick = { onDelete(jar.id) }) { Text("Excluir") } } } } }
+    }
+    if (dialog) SavingsJarDialog(onDismiss = { dialog = false }, onSave = { name, current, target -> onAdd(name, current, target); dialog = false })
+    editing?.let { jar -> SavingsJarDialog(existing = jar, onDismiss = { editing = null }, onSave = { name, current, target -> onUpdate(jar, name, current, target); editing = null }) }
+}
+
+@Composable private fun BankDialog(onDismiss: () -> Unit, onSave: (String, Double) -> Unit, existing: BankEntity? = null) {
+    var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var balance by remember(existing?.id) { mutableStateOf(existing?.balanceCents?.div(100.0)?.toString().orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Novo banco" else "Editar banco") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Nome do banco") }, singleLine = true); OutlinedTextField(balance, { balance = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Saldo atual") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(name, balance.toDoubleOrNull() ?: 0.0) }, enabled = name.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+}
+
+@Composable private fun SavingsJarDialog(onDismiss: () -> Unit, onSave: (String, Double, Double?) -> Unit, existing: SavingsJarEntity? = null) {
+    var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }; var current by remember(existing?.id) { mutableStateOf(existing?.currentCents?.div(100.0)?.toString().orEmpty()) }; var target by remember(existing?.id) { mutableStateOf(existing?.targetCents?.div(100.0)?.toString().orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Novo cofrinho" else "Editar cofrinho") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Nome") }, singleLine = true); OutlinedTextField(current, { current = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor guardado") }, singleLine = true); OutlinedTextField(target, { target = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Meta opcional") }, singleLine = true) } }, confirmButton = { Button(onClick = { onSave(name, current.toDoubleOrNull() ?: 0.0, target.toDoubleOrNull()) }, enabled = name.isNotBlank() && (current.toDoubleOrNull() ?: 0.0) >= 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+}
+
+@Composable
+private fun MoreScreen(modifier: Modifier, onReports: () -> Unit, onVault: () -> Unit, onBanks: () -> Unit, onJars: () -> Unit) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 20.dp),
         contentPadding = PaddingValues(top = 24.dp, bottom = 96.dp),
@@ -352,6 +566,8 @@ private fun MoreScreen(modifier: Modifier, onReports: () -> Unit, onVault: () ->
             Text("Ferramentas para cuidar da sua vida em um só lugar.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { MoreActionCard("Relatórios", "Entenda seus gastos por categoria", Icons.Filled.Assessment, onReports) }
+        item { MoreActionCard("Bancos", "Cadastre e acompanhe seus saldos", Icons.Filled.AccountBalanceWallet, onBanks) }
+        item { MoreActionCard("Cofrinhos", "Acompanhe suas reservas separadas", Icons.Filled.AccountBalanceWallet, onJars) }
         item { MoreActionCard("Cofre", "Senhas e informações protegidas", Icons.Filled.Lock, onVault) }
     }
 }
@@ -373,7 +589,7 @@ private fun MoreActionCard(title: String, subtitle: String, icon: androidx.compo
 }
 
 @Composable
-private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, onDelete: (String) -> Unit, onAdd: (String, String, String, String?) -> Unit) {
+private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, onDelete: (String) -> Unit, onAdd: (String, String, String, String?) -> Unit, onEdit: (VaultItemEntity) -> Unit) {
     var unlocked by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
     var revealedSecret by remember { mutableStateOf<String?>(null) }
@@ -382,20 +598,20 @@ private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, onDele
     LazyColumn(modifier.fillMaxSize().padding(20.dp), contentPadding = PaddingValues(bottom = 92.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Cofre", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Seus dados sensíveis ficam protegidos no aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (!unlocked) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Cofre bloqueado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text("Use biometria ou o bloqueio do aparelho para visualizar seus itens."); Button(onClick = { activity?.let { host -> val prompt = BiometricPrompt(host, host.mainExecutor, object : BiometricPrompt.AuthenticationCallback() { override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { unlocked = true } }); prompt.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle("Desbloquear NxusLife").setSubtitle("Confirme sua identidade para abrir o cofre").setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL).build()) } }) { Text("Desbloquear cofre") } } } }
-        else { item { Button(onClick = { addDialog = true }) { Text("Adicionar item seguro") } }; if (items.isEmpty()) item { Empty("Cofre vazio", "Adicione sua primeira senha ou anotação segura.") }; items(items, key = { it.id }) { item -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold); Text(item.username, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { TextButton(onClick = { revealedSecret = runCatching { VaultCrypto.decrypt(item.encryptedSecret) }.getOrNull() }) { Text("Ver") }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } } } } }
+        else { item { Button(onClick = { addDialog = true }) { Text("Adicionar item seguro") } }; if (items.isEmpty()) item { Empty("Cofre vazio", "Adicione sua primeira senha ou anotação segura.") }; items(items, key = { it.id }) { item -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold); Text(item.username, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { TextButton(onClick = { revealedSecret = runCatching { VaultCrypto.decrypt(item.encryptedSecret) }.getOrNull() }) { Text("Ver") }; TextButton(onClick = { onEdit(item) }) { Text("Editar") }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } } } } }
     }
     if (addDialog) VaultItemDialog(onDismiss = { addDialog = false }, onSave = { title, username, secret -> onAdd(title, username, secret, null); addDialog = false })
     revealedSecret?.let { secret -> AlertDialog(onDismissRequest = { revealedSecret = null }, title = { Text("Segredo") }, text = { Text(secret) }, confirmButton = { TextButton(onClick = { revealedSecret = null }) { Text("Fechar") } }) }
 }
 
 @Composable
-private fun VaultItemDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
-    var title by remember { mutableStateOf("") }; var username by remember { mutableStateOf("") }; var secret by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Novo item seguro") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(username, { username = it }, label = { Text("Usuário") }, singleLine = true); OutlinedTextField(secret, { secret = it }, label = { Text("Senha ou segredo") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }, confirmButton = { Button(onClick = { onSave(title, username, secret) }, enabled = title.isNotBlank() && secret.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+private fun VaultItemDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit, existing: VaultItemEntity? = null) {
+    var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }; var username by remember(existing?.id) { mutableStateOf(existing?.username.orEmpty()) }; var secret by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Novo item seguro" else "Editar item seguro") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(username, { username = it }, label = { Text("Usuário") }, singleLine = true); OutlinedTextField(secret, { secret = it }, label = { Text(if (existing == null) "Senha ou segredo" else "Nova senha (opcional)") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) } }, confirmButton = { Button(onClick = { onSave(title, username, secret) }, enabled = title.isNotBlank() && (existing != null || secret.isNotBlank())) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable
-private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle: (String) -> Unit, onDelete: (String) -> Unit) {
+private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle: (String) -> Unit, onDelete: (String) -> Unit, onEdit: (PersonalTask) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var onlyPending by rememberSaveable { mutableStateOf(false) }
     val visibleTasks = tasks.filter { task ->
@@ -414,7 +630,8 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
                 task.dueDate?.let { Text(if (overdue) "Atrasada • prazo: $it" else "Prazo: $it", style = MaterialTheme.typography.bodyMedium, color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { onToggle(task.id) }, modifier = Modifier.weight(1f).height(46.dp)) { Text(if (task.completed) "Reabrir" else "Concluir") }
-                    OutlinedButton(onClick = { onDelete(task.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") }
+                    OutlinedButton(onClick = { onEdit(task) }, modifier = Modifier.height(46.dp)) { Text("Editar") }
+                    TextButton(onClick = { onDelete(task.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") }
                 }
             }
         } }
@@ -431,9 +648,9 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
     } }
 }*/
 
-@Composable private fun TransactionDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, TransactionType, String?) -> Unit) {
-    var description by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var type by remember { mutableStateOf(TransactionType.EXPENSE) }; var categoryId by remember { mutableStateOf<String?>(null) }; var categoryMenu by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Novo lançamento") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+@Composable private fun TransactionDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, TransactionType, String?) -> Unit, existing: MoneyTransaction? = null) {
+    var description by remember(existing?.id) { mutableStateOf(existing?.description.orEmpty()) }; var amount by remember(existing?.id) { mutableStateOf(existing?.amount?.toString().orEmpty()) }; var type by remember(existing?.id) { mutableStateOf(existing?.type ?: TransactionType.EXPENSE) }; var categoryId by remember(existing?.id) { mutableStateOf(existing?.categoryId) }; var categoryMenu by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Novo lançamento" else "Editar lançamento") }, text = { Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Descrição") }, singleLine = true)
         OutlinedTextField(amount, { amount = it.replace(',', '.') }, modifier = Modifier.fillMaxWidth(), label = { Text("Valor") }, singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { type = TransactionType.INCOME }) { Text(if (type == TransactionType.INCOME) "✓ Entrada" else "Entrada") }; OutlinedButton(onClick = { type = TransactionType.EXPENSE }) { Text(if (type == TransactionType.EXPENSE) "✓ Saída" else "Saída") } }
@@ -442,7 +659,7 @@ private fun TasksScreen(modifier: Modifier, tasks: List<PersonalTask>, onToggle:
 }
 
 @Composable
-private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, categories: List<CategoryEntity>, onAddBill: (String, Double, Int, String?) -> Unit, onAddGoal: (String, Double, String?) -> Unit, onAddContribution: (String, Double) -> Unit, onSetBillActive: (String, Boolean) -> Unit, onDeleteBill: (String) -> Unit, onAddGoalClick: () -> Unit) {
+private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, categories: List<CategoryEntity>, onAddBill: (String, Double, Int, String?) -> Unit, onAddGoal: (String, Double, String?) -> Unit, onAddContribution: (String, Double) -> Unit, onEditGoal: (GoalEntity) -> Unit, onSetBillActive: (String, Boolean) -> Unit, onDeleteBill: (String) -> Unit, onEditBill: (RecurringBillEntity) -> Unit, onAddGoalClick: () -> Unit) {
     var contributionGoalId by remember { mutableStateOf<String?>(null) }
     val recurringTotal = bills.sumOf { it.amountCents } / 100.0
     val goalTotal = goals.sumOf { it.targetCents } / 100.0
@@ -453,11 +670,11 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
         if (goals.isEmpty()) item { Empty("Nenhuma meta criada", "Crie uma meta para acompanhar seu progresso.") }
         items(goals, key = { it.id }) { goal ->
             val progress = if (goal.targetCents == 0L) 0f else (goal.currentCents.toFloat() / goal.targetCents).coerceIn(0f, 1f)
-            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${(progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }; LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth()); Text("${money(goal.currentCents / 100.0)} de ${money(goal.targetCents / 100.0)}", color = MaterialTheme.colorScheme.onSurfaceVariant); Button(onClick = { contributionGoalId = goal.id }, modifier = Modifier.fillMaxWidth().height(46.dp), enabled = goal.currentCents < goal.targetCents) { Text("Adicionar valor") } } }
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(goal.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("${(progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }; LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth()); Text("${money(goal.currentCents / 100.0)} de ${money(goal.targetCents / 100.0)}", color = MaterialTheme.colorScheme.onSurfaceVariant); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { Button(onClick = { contributionGoalId = goal.id }, modifier = Modifier.weight(1f).height(46.dp), enabled = goal.currentCents < goal.targetCents) { Text("Adicionar valor") }; OutlinedButton(onClick = { onEditGoal(goal) }, modifier = Modifier.height(46.dp)) { Text("Editar") } } } }
         }
         item { Text("Contas recorrentes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
         if (bills.isEmpty()) item { Empty("Nenhuma conta recorrente", "Use o botão + para registrar uma cobrança mensal.") }
-        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Vencimento todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(categories.firstOrNull { it.id == bill.categoryId }?.name ?: "Sem categoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onSetBillActive(bill.id, false) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("Pausar") }; TextButton(onClick = { onDeleteBill(bill.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") } } } } }
+        items(bills, key = { it.id }) { bill -> Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column(Modifier.weight(1f)) { Text(bill.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("Vencimento todo dia ${bill.dayOfMonth}", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(categories.firstOrNull { it.id == bill.categoryId }?.name ?: "Sem categoria", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary) }; Text(money(bill.amountCents / 100.0), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { onSetBillActive(bill.id, false) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("Pausar") }; OutlinedButton(onClick = { onEditBill(bill) }, modifier = Modifier.height(46.dp)) { Text("Editar") }; TextButton(onClick = { onDeleteBill(bill.id) }, modifier = Modifier.height(46.dp)) { Text("Excluir") } } } } }
     }
     contributionGoalId?.let { goalId -> ContributionDialog(onDismiss = { contributionGoalId = null }, onSave = { value -> onAddContribution(goalId, value); contributionGoalId = null }) }
 }
@@ -467,19 +684,19 @@ private fun PlanningScreen(modifier: Modifier, bills: List<RecurringBillEntity>,
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Adicionar à meta") }, text = { OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor") }, singleLine = true) }, confirmButton = { Button(onClick = { onSave(amount.toDoubleOrNull() ?: 0.0) }, enabled = (amount.toDoubleOrNull() ?: 0.0) > 0) { Text("Adicionar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
-@Composable private fun RecurringDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, Int, String?) -> Unit) {
-    var title by remember { mutableStateOf("") }; var amount by remember { mutableStateOf("") }; var day by remember { mutableStateOf("1") }; var categoryId by remember { mutableStateOf<String?>(null) }; var menu by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova conta recorrente") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor mensal") }, singleLine = true); OutlinedTextField(day, { day = it.filter(Char::isDigit) }, label = { Text("Dia do mês") }, singleLine = true); Box { OutlinedButton(onClick = { menu = true }) { Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Escolher categoria") }; DropdownMenu(menu, { menu = false }) { categories.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; menu = false }) } } } } }, confirmButton = { Button(onClick = { amount.toDoubleOrNull()?.let { onSave(title, it, day.toIntOrNull() ?: 1, categoryId) } }, enabled = title.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0 && (day.toIntOrNull() ?: 0) in 1..31) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+@Composable private fun RecurringDialog(categories: List<CategoryEntity>, onDismiss: () -> Unit, onSave: (String, Double, Int, String?) -> Unit, existing: RecurringBillEntity? = null) {
+    var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }; var amount by remember(existing?.id) { mutableStateOf(existing?.amountCents?.div(100.0)?.toString().orEmpty()) }; var day by remember(existing?.id) { mutableStateOf(existing?.dayOfMonth?.toString() ?: "1") }; var categoryId by remember(existing?.id) { mutableStateOf(existing?.categoryId) }; var menu by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Nova conta recorrente" else "Editar conta recorrente") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome") }, singleLine = true); OutlinedTextField(amount, { amount = it.replace(',', '.') }, label = { Text("Valor mensal") }, singleLine = true); OutlinedTextField(day, { day = it.filter(Char::isDigit) }, label = { Text("Dia do mês") }, singleLine = true); Box { OutlinedButton(onClick = { menu = true }) { Text(categories.firstOrNull { it.id == categoryId }?.name ?: "Escolher categoria") }; DropdownMenu(menu, { menu = false }) { categories.forEach { category -> DropdownMenuItem(text = { Text(category.name) }, onClick = { categoryId = category.id; menu = false }) } } } } }, confirmButton = { Button(onClick = { amount.toDoubleOrNull()?.let { onSave(title, it, day.toIntOrNull() ?: 1, categoryId) } }, enabled = title.isNotBlank() && (amount.toDoubleOrNull() ?: 0.0) > 0 && (day.toIntOrNull() ?: 0) in 1..31) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
-@Composable private fun GoalDialog(onDismiss: () -> Unit, onSave: (String, Double, String?) -> Unit) {
-    var title by remember { mutableStateOf("") }; var target by remember { mutableStateOf("") }; var deadline by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova meta") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome da meta") }, singleLine = true); OutlinedTextField(target, { target = it.replace(',', '.') }, label = { Text("Valor alvo") }, singleLine = true); DateField("Prazo opcional", deadline) { deadline = it } } }, confirmButton = { Button(onClick = { target.toDoubleOrNull()?.let { onSave(title, it, deadline) } }, enabled = title.isNotBlank() && (target.toDoubleOrNull() ?: 0.0) > 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+@Composable private fun GoalDialog(onDismiss: () -> Unit, onSave: (String, Double, String?) -> Unit, existing: GoalEntity? = null) {
+    var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }; var target by remember(existing?.id) { mutableStateOf(existing?.targetCents?.div(100.0)?.toString().orEmpty()) }; var deadline by remember(existing?.id) { mutableStateOf(existing?.deadline.orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Nova meta" else "Editar meta") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Nome da meta") }, singleLine = true); OutlinedTextField(target, { target = it.replace(',', '.') }, label = { Text("Valor alvo") }, singleLine = true); DateField("Prazo opcional", deadline) { deadline = it } } }, confirmButton = { Button(onClick = { target.toDoubleOrNull()?.let { onSave(title, it, deadline) } }, enabled = title.isNotBlank() && (target.toDoubleOrNull() ?: 0.0) > 0) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
-@Composable private fun TaskDialog(onDismiss: () -> Unit, onSave: (String, String?) -> Unit) {
-    var title by remember { mutableStateOf("") }; var date by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Nova tarefa") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Título") }, singleLine = true); DateField("Prazo opcional", date) { date = it } } }, confirmButton = { Button(onClick = { onSave(title, date) }, enabled = title.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
+@Composable private fun TaskDialog(onDismiss: () -> Unit, onSave: (String, String?) -> Unit, existing: PersonalTask? = null) {
+    var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }; var date by remember(existing?.id) { mutableStateOf(existing?.dueDate.orEmpty()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) "Nova tarefa" else "Editar tarefa") }, text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedTextField(title, { title = it }, label = { Text("Título") }, singleLine = true); DateField("Prazo opcional", date) { date = it } } }, confirmButton = { Button(onClick = { onSave(title, date) }, enabled = title.isNotBlank()) { Text("Salvar") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
 @Composable private fun DateField(label: String, value: String, onValueChange: (String) -> Unit) {

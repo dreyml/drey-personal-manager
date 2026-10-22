@@ -18,6 +18,8 @@ import com.nxuslab.dreymanager.data.TransactionType
 import com.nxuslab.dreymanager.data.VaultItemEntity
 import com.nxuslab.dreymanager.data.InstallmentPlanEntity
 import com.nxuslab.dreymanager.data.DebtEntity
+import com.nxuslab.dreymanager.data.BankEntity
+import com.nxuslab.dreymanager.data.SavingsJarEntity
 import com.nxuslab.dreymanager.security.VaultCrypto
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +68,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val debts: StateFlow<List<DebtEntity>> = database.debtDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val banks: StateFlow<List<BankEntity>> = database.bankDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val savingsJars: StateFlow<List<SavingsJarEntity>> = database.savingsJarDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     var vaultDialog = false
 
     init {
@@ -102,6 +110,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateRecurringBill(existing: RecurringBillEntity, title: String, amount: Double, dayOfMonth: Int, categoryId: String?) {
+        if (title.isBlank() || amount <= 0 || dayOfMonth !in 1..31) return
+        viewModelScope.launch { database.recurringBillDao().insert(existing.copy(title = title.trim(), amountCents = (amount * 100).roundToLong(), dayOfMonth = dayOfMonth, categoryId = categoryId)) }
+    }
+
     fun addGoal(title: String, target: Double, deadline: String?) {
         if (title.isBlank() || target <= 0) return
         viewModelScope.launch {
@@ -112,6 +125,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ),
             )
         }
+    }
+
+    fun updateGoal(existing: GoalEntity, title: String, target: Double, deadline: String?) {
+        if (title.isBlank() || target <= 0) return
+        viewModelScope.launch { database.goalDao().insert(existing.copy(title = title.trim(), targetCents = (target * 100).roundToLong(), deadline = deadline?.trim()?.takeIf { it.isNotBlank() })) }
     }
 
     fun addTransaction(description: String, amount: Double, type: TransactionType, categoryId: String?) {
@@ -132,6 +150,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch { database.transactionDao().delete(id) }
+    }
+
+    fun updateTransaction(id: String, description: String, amount: Double, type: TransactionType, categoryId: String?) {
+        if (description.isBlank() || amount <= 0) return
+        viewModelScope.launch {
+            database.transactionDao().findById(id)?.let { row ->
+                database.transactionDao().insert(row.copy(description = description.trim(), amountCents = (amount * 100).roundToLong(), type = type.name, categoryId = categoryId))
+            }
+        }
     }
 
     fun addTask(title: String, dueDate: String?) {
@@ -160,9 +187,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { database.taskDao().delete(id) }
     }
 
+    fun updateTask(id: String, title: String, dueDate: String?) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            database.taskDao().findById(id)?.let { row ->
+                database.taskDao().insert(row.copy(title = title.trim(), dueDate = dueDate?.trim()?.takeIf { it.isNotBlank() }))
+            }
+        }
+    }
+
     fun addVaultItem(title: String, username: String, secret: String, notes: String?) {
         if (title.isBlank() || secret.isBlank()) return
         viewModelScope.launch { database.vaultDao().insert(VaultItemEntity(java.util.UUID.randomUUID().toString(), title.trim(), username.trim(), VaultCrypto.encrypt(secret), notes?.trim(), System.currentTimeMillis())) }
+    }
+
+    fun updateVaultItem(existing: VaultItemEntity, title: String, username: String, secret: String, notes: String?) {
+        if (title.isBlank()) return
+        viewModelScope.launch { database.vaultDao().insert(existing.copy(title = title.trim(), username = username.trim(), encryptedSecret = if (secret.isBlank()) existing.encryptedSecret else VaultCrypto.encrypt(secret), notes = notes?.trim()?.takeIf { it.isNotBlank() })) }
     }
 
     fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
@@ -184,12 +225,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteInstallment(id: String) { viewModelScope.launch { database.installmentDao().delete(id) } }
     fun markInstallmentPaid(id: String) { viewModelScope.launch { database.installmentDao().markNextPaid(id) } }
 
+    fun updateInstallment(existing: InstallmentPlanEntity, description: String, total: Double, count: Int, firstDueDate: String) {
+        if (description.isBlank() || total <= 0 || count <= 0) return
+        val firstDue = runCatching { java.time.LocalDate.parse(firstDueDate) }.getOrNull() ?: return
+        val totalCents = (total * 100).roundToLong()
+        viewModelScope.launch { database.installmentDao().insert(existing.copy(description = description.trim(), totalCents = totalCents, installmentCents = totalCents / count, installmentCount = count, startMonth = java.time.YearMonth.from(firstDue).toString(), endMonth = java.time.YearMonth.from(firstDue.plusMonths(count - 1L)).toString(), dueDay = firstDue.dayOfMonth, paidCount = existing.paidCount.coerceAtMost(count))) }
+    }
+
     fun addDebt(person: String, description: String, amount: Double, dueDate: String?) {
         if (person.isBlank() || description.isBlank() || amount <= 0) return
         viewModelScope.launch { database.debtDao().insert(DebtEntity(java.util.UUID.randomUUID().toString(), person.trim(), description.trim(), (amount * 100).roundToLong(), dueDate?.trim()?.takeIf { it.isNotBlank() }, false, System.currentTimeMillis())) }
     }
 
     fun deleteDebt(id: String) { viewModelScope.launch { database.debtDao().delete(id) } }
+    fun updateDebt(existing: DebtEntity, person: String, description: String, amount: Double, dueDate: String?) {
+        if (person.isBlank() || description.isBlank() || amount <= 0) return
+        viewModelScope.launch { database.debtDao().insert(existing.copy(person = person.trim(), description = description.trim(), amountCents = (amount * 100).roundToLong(), dueDate = dueDate?.trim()?.takeIf { it.isNotBlank() })) }
+    }
+    fun addBank(name: String, balance: Double) {
+        if (name.isBlank()) return
+        viewModelScope.launch { database.bankDao().insert(BankEntity(java.util.UUID.randomUUID().toString(), name.trim(), (balance * 100).roundToLong())) }
+    }
+    fun updateBank(existing: BankEntity, name: String, balance: Double) {
+        if (name.isBlank()) return
+        viewModelScope.launch { database.bankDao().insert(existing.copy(name = name.trim(), balanceCents = (balance * 100).roundToLong())) }
+    }
+    fun deleteBank(id: String) { viewModelScope.launch { database.bankDao().delete(id) } }
+    fun addSavingsJar(name: String, current: Double, target: Double?) {
+        if (name.isBlank() || current < 0 || target?.let { it <= 0 } == true) return
+        viewModelScope.launch { database.savingsJarDao().insert(SavingsJarEntity(java.util.UUID.randomUUID().toString(), name.trim(), (current * 100).roundToLong(), target?.times(100)?.roundToLong())) }
+    }
+    fun updateSavingsJar(existing: SavingsJarEntity, name: String, current: Double, target: Double?) {
+        if (name.isBlank() || current < 0 || target?.let { it <= 0 } == true) return
+        viewModelScope.launch { database.savingsJarDao().insert(existing.copy(name = name.trim(), currentCents = (current * 100).roundToLong(), targetCents = target?.times(100)?.roundToLong())) }
+    }
+    fun deleteSavingsJar(id: String) { viewModelScope.launch { database.savingsJarDao().delete(id) } }
     fun setDebtSettled(id: String, settled: Boolean) { viewModelScope.launch { database.debtDao().setSettled(id, settled) } }
     fun addGoalContribution(id: String, amount: Double) {
         if (amount <= 0) return

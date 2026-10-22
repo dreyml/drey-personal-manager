@@ -93,6 +93,22 @@ data class DebtEntity(
     val createdAt: Long,
 )
 
+@Entity(tableName = "banks")
+data class BankEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val name: String,
+    val balanceCents: Long = 0,
+    val color: Long = 0xFF8994FF,
+)
+
+@Entity(tableName = "savings_jars")
+data class SavingsJarEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val name: String,
+    val currentCents: Long = 0,
+    val targetCents: Long? = null,
+)
+
 @Dao
 interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY createdAt DESC")
@@ -103,6 +119,9 @@ interface TransactionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(transactions: List<TransactionEntity>)
+
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): TransactionEntity?
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun delete(id: String)
@@ -219,7 +238,21 @@ interface DebtDao {
     suspend fun setSettled(id: String, settled: Boolean)
 }
 
-@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class], version = 5, exportSchema = true)
+@Dao
+interface BankDao {
+    @Query("SELECT * FROM banks ORDER BY name") fun observeAll(): Flow<List<BankEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(bank: BankEntity)
+    @Query("DELETE FROM banks WHERE id = :id") suspend fun delete(id: String)
+}
+
+@Dao
+interface SavingsJarDao {
+    @Query("SELECT * FROM savings_jars ORDER BY name") fun observeAll(): Flow<List<SavingsJarEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(jar: SavingsJarEntity)
+    @Query("DELETE FROM savings_jars WHERE id = :id") suspend fun delete(id: String)
+}
+
+@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class, BankEntity::class, SavingsJarEntity::class], version = 6, exportSchema = true)
 abstract class PersonalDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun taskDao(): TaskDao
@@ -229,6 +262,8 @@ abstract class PersonalDatabase : RoomDatabase() {
     abstract fun vaultDao(): VaultDao
     abstract fun installmentDao(): InstallmentDao
     abstract fun debtDao(): DebtDao
+    abstract fun bankDao(): BankDao
+    abstract fun savingsJarDao(): SavingsJarDao
 
     companion object {
         @Volatile private var instance: PersonalDatabase? = null
@@ -238,7 +273,7 @@ abstract class PersonalDatabase : RoomDatabase() {
                 context.applicationContext,
                 PersonalDatabase::class.java,
                 "drey_manager.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -265,6 +300,13 @@ abstract class PersonalDatabase : RoomDatabase() {
         private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE installment_plans ADD COLUMN dueDay INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        private val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS banks (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, balanceCents INTEGER NOT NULL, color INTEGER NOT NULL)")
+                database.execSQL("CREATE TABLE IF NOT EXISTS savings_jars (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, currentCents INTEGER NOT NULL, targetCents INTEGER)")
             }
         }
     }
