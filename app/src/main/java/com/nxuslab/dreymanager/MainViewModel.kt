@@ -167,15 +167,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
 
-    fun addInstallment(description: String, total: Double, count: Int, startMonth: String) {
-        if (description.isBlank() || total <= 0 || count <= 0 || startMonth.isBlank()) return
-        val start = runCatching { java.time.YearMonth.parse(startMonth) }.getOrNull() ?: return
+    fun addInstallment(description: String, total: Double, count: Int, firstDueDate: String) {
+        if (description.isBlank() || total <= 0 || count <= 0 || firstDueDate.isBlank()) return
+        val firstDue = runCatching { java.time.LocalDate.parse(firstDueDate) }.getOrNull() ?: return
         val totalCents = (total * 100).roundToLong()
         val installmentCents = totalCents / count
         viewModelScope.launch {
             database.installmentDao().insert(InstallmentPlanEntity(
                 java.util.UUID.randomUUID().toString(), description.trim(), totalCents,
-                installmentCents, count, start.toString(), start.plusMonths(count - 1L).toString(),
+                installmentCents, count, java.time.YearMonth.from(firstDue).toString(),
+                java.time.YearMonth.from(firstDue.plusMonths(count - 1L)).toString(), firstDue.dayOfMonth,
             ))
         }
     }
@@ -223,7 +224,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             JSONObject().apply { put("id", row.id); put("title", row.title); put("targetCents", row.targetCents); put("currentCents", row.currentCents); put("deadline", row.deadline) }
         }))
         root.put("installments", JSONArray(database.installmentDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("description", row.description); put("totalCents", row.totalCents); put("installmentCents", row.installmentCents); put("installmentCount", row.installmentCount); put("startMonth", row.startMonth); put("endMonth", row.endMonth); put("paidCount", row.paidCount) }
+            JSONObject().apply { put("id", row.id); put("description", row.description); put("totalCents", row.totalCents); put("installmentCents", row.installmentCents); put("installmentCount", row.installmentCount); put("startMonth", row.startMonth); put("endMonth", row.endMonth); put("dueDay", row.dueDay); put("paidCount", row.paidCount) }
         }))
         root.put("debts", JSONArray(database.debtDao().observeAll().first().map { row ->
             JSONObject().apply { put("id", row.id); put("person", row.person); put("description", row.description); put("amountCents", row.amountCents); put("dueDate", row.dueDate); put("settled", row.settled); put("createdAt", row.createdAt) }
@@ -257,7 +258,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }) }
             root.optJSONArray("installments")?.let { array -> (0 until array.length()).forEach { i ->
                 val o = array.getJSONObject(i)
-                database.installmentDao().insert(InstallmentPlanEntity(o.getString("id"), o.getString("description"), o.getLong("totalCents"), o.getLong("installmentCents"), o.getInt("installmentCount"), o.getString("startMonth"), o.getString("endMonth"), o.optInt("paidCount")))
+                database.installmentDao().insert(InstallmentPlanEntity(o.getString("id"), o.getString("description"), o.getLong("totalCents"), o.getLong("installmentCents"), o.getInt("installmentCount"), o.getString("startMonth"), o.getString("endMonth"), o.optInt("dueDay", 1), o.optInt("paidCount")))
             } }
             root.optJSONArray("debts")?.let { array -> (0 until array.length()).forEach { i ->
                 val o = array.getJSONObject(i)

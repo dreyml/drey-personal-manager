@@ -78,6 +78,7 @@ data class InstallmentPlanEntity(
     val installmentCount: Int,
     val startMonth: String,
     val endMonth: String,
+    val dueDay: Int = 1,
     val paidCount: Int = 0,
 )
 
@@ -218,7 +219,7 @@ interface DebtDao {
     suspend fun setSettled(id: String, settled: Boolean)
 }
 
-@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class], version = 4, exportSchema = true)
+@Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class], version = 5, exportSchema = true)
 abstract class PersonalDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
     abstract fun taskDao(): TaskDao
@@ -237,7 +238,7 @@ abstract class PersonalDatabase : RoomDatabase() {
                 context.applicationContext,
                 PersonalDatabase::class.java,
                 "drey_manager.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
@@ -258,6 +259,12 @@ abstract class PersonalDatabase : RoomDatabase() {
             override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
                 database.execSQL("CREATE TABLE IF NOT EXISTS installment_plans (id TEXT NOT NULL PRIMARY KEY, description TEXT NOT NULL, totalCents INTEGER NOT NULL, installmentCents INTEGER NOT NULL, installmentCount INTEGER NOT NULL, startMonth TEXT NOT NULL, endMonth TEXT NOT NULL, paidCount INTEGER NOT NULL)")
                 database.execSQL("CREATE TABLE IF NOT EXISTS debts (id TEXT NOT NULL PRIMARY KEY, person TEXT NOT NULL, description TEXT NOT NULL, amountCents INTEGER NOT NULL, dueDate TEXT, settled INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE installment_plans ADD COLUMN dueDay INTEGER NOT NULL DEFAULT 1")
             }
         }
     }
