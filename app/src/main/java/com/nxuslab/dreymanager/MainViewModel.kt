@@ -167,12 +167,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
 
-    fun addInstallment(description: String, total: Double, installment: Double, count: Int, startMonth: String, endMonth: String) {
-        if (description.isBlank() || total <= 0 || installment <= 0 || count <= 0 || startMonth.isBlank() || endMonth.isBlank()) return
-        viewModelScope.launch { database.installmentDao().insert(InstallmentPlanEntity(java.util.UUID.randomUUID().toString(), description.trim(), (total * 100).roundToLong(), (installment * 100).roundToLong(), count, startMonth.trim(), endMonth.trim())) }
+    fun addInstallment(description: String, total: Double, count: Int, startMonth: String) {
+        if (description.isBlank() || total <= 0 || count <= 0 || startMonth.isBlank()) return
+        val start = runCatching { java.time.YearMonth.parse(startMonth) }.getOrNull() ?: return
+        val totalCents = (total * 100).roundToLong()
+        val installmentCents = totalCents / count
+        viewModelScope.launch {
+            database.installmentDao().insert(InstallmentPlanEntity(
+                java.util.UUID.randomUUID().toString(), description.trim(), totalCents,
+                installmentCents, count, start.toString(), start.plusMonths(count - 1L).toString(),
+            ))
+        }
     }
 
     fun deleteInstallment(id: String) { viewModelScope.launch { database.installmentDao().delete(id) } }
+    fun markInstallmentPaid(id: String) { viewModelScope.launch { database.installmentDao().markNextPaid(id) } }
 
     fun addDebt(person: String, description: String, amount: Double, dueDate: String?) {
         if (person.isBlank() || description.isBlank() || amount <= 0) return
@@ -180,6 +189,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteDebt(id: String) { viewModelScope.launch { database.debtDao().delete(id) } }
+    fun setDebtSettled(id: String, settled: Boolean) { viewModelScope.launch { database.debtDao().setSettled(id, settled) } }
+    fun addGoalContribution(id: String, amount: Double) {
+        if (amount <= 0) return
+        viewModelScope.launch { database.goalDao().addContribution(id, (amount * 100).roundToLong()) }
+    }
+    fun deleteGoal(id: String) { viewModelScope.launch { database.goalDao().delete(id) } }
+    fun setRecurringBillActive(id: String, active: Boolean) { viewModelScope.launch { database.recurringBillDao().setActive(id, active) } }
+    fun deleteRecurringBill(id: String) { viewModelScope.launch { database.recurringBillDao().delete(id) } }
 
     suspend fun exportSnapshot(): String {
         val root = JSONObject()
@@ -199,11 +216,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         root.put("categories", JSONArray(database.categoryDao().observeAll().first().map { row ->
             JSONObject().apply { put("id", row.id); put("name", row.name); put("color", row.color); put("kind", row.kind) }
         }))
-        root.put("recurringBills", JSONArray(database.recurringBillDao().observeActive().first().map { row ->
+        root.put("recurringBills", JSONArray(database.recurringBillDao().observeAll().first().map { row ->
             JSONObject().apply { put("id", row.id); put("title", row.title); put("amountCents", row.amountCents); put("dayOfMonth", row.dayOfMonth); put("categoryId", row.categoryId); put("active", row.active) }
         }))
         root.put("goals", JSONArray(database.goalDao().observeAll().first().map { row ->
             JSONObject().apply { put("id", row.id); put("title", row.title); put("targetCents", row.targetCents); put("currentCents", row.currentCents); put("deadline", row.deadline) }
+        }))
+        root.put("installments", JSONArray(database.installmentDao().observeAll().first().map { row ->
+            JSONObject().apply { put("id", row.id); put("description", row.description); put("totalCents", row.totalCents); put("installmentCents", row.installmentCents); put("installmentCount", row.installmentCount); put("startMonth", row.startMonth); put("endMonth", row.endMonth); put("paidCount", row.paidCount) }
+        }))
+        root.put("debts", JSONArray(database.debtDao().observeAll().first().map { row ->
+            JSONObject().apply { put("id", row.id); put("person", row.person); put("description", row.description); put("amountCents", row.amountCents); put("dueDate", row.dueDate); put("settled", row.settled); put("createdAt", row.createdAt) }
         }))
         return root.toString(2)
     }
@@ -211,6 +234,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun restoreSnapshot(json: String) {
         viewModelScope.launch {
             val root = JSONObject(json)
+            require(root.has("exportedAt")) { "Arquivo de backup inválido." }
+            root.optJSONArray("categories")?.let { array -> database.categoryDao().insertAll((0 until array.length()).map { i ->
+                val o = array.getJSONObject(i)
+                CategoryEntity(o.getString("id"), o.getString("name"), o.getLong("color"), o.optString("kind", "EXPENSE"))
+            }) }
             root.optJSONArray("transactions")?.let { array -> database.transactionDao().insertAll((0 until array.length()).map { i ->
                 val o = array.getJSONObject(i)
                 TransactionEntity(o.getString("id"), o.getString("description"), o.getLong("amountCents"), o.getString("type"), o.optString("categoryId").takeIf { it != "null" && it.isNotBlank() }, o.getLong("createdAt"), o.optBoolean("recurring"))
@@ -227,6 +255,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val o = array.getJSONObject(i)
                 GoalEntity(o.getString("id"), o.getString("title"), o.getLong("targetCents"), o.optLong("currentCents"), o.optString("deadline").takeIf { it != "null" && it.isNotBlank() })
             }) }
+            root.optJSONArray("installments")?.let { array -> (0 until array.length()).forEach { i ->
+                val o = array.getJSONObject(i)
+                database.installmentDao().insert(InstallmentPlanEntity(o.getString("id"), o.getString("description"), o.getLong("totalCents"), o.getLong("installmentCents"), o.getInt("installmentCount"), o.getString("startMonth"), o.getString("endMonth"), o.optInt("paidCount")))
+            } }
+            root.optJSONArray("debts")?.let { array -> (0 until array.length()).forEach { i ->
+                val o = array.getJSONObject(i)
+                database.debtDao().insert(DebtEntity(o.getString("id"), o.getString("person"), o.getString("description"), o.getLong("amountCents"), o.optString("dueDate").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("settled"), o.getLong("createdAt")))
+            } }
         }
     }
 }

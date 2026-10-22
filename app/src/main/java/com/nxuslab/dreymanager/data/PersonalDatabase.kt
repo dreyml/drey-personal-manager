@@ -142,11 +142,20 @@ interface RecurringBillDao {
     @Query("SELECT * FROM recurring_bills WHERE active = 1 ORDER BY dayOfMonth")
     fun observeActive(): Flow<List<RecurringBillEntity>>
 
+    @Query("SELECT * FROM recurring_bills ORDER BY active DESC, dayOfMonth")
+    fun observeAll(): Flow<List<RecurringBillEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(bill: RecurringBillEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(bills: List<RecurringBillEntity>)
+
+    @Query("UPDATE recurring_bills SET active = :active WHERE id = :id")
+    suspend fun setActive(id: String, active: Boolean)
+
+    @Query("DELETE FROM recurring_bills WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
 @Dao
@@ -159,6 +168,12 @@ interface GoalDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(goals: List<GoalEntity>)
+
+    @Query("UPDATE goals SET currentCents = MIN(targetCents, currentCents + :amountCents) WHERE id = :id")
+    suspend fun addContribution(id: String, amountCents: Long)
+
+    @Query("DELETE FROM goals WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
 @Dao
@@ -183,6 +198,9 @@ interface InstallmentDao {
 
     @Query("DELETE FROM installment_plans WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE installment_plans SET paidCount = MIN(installmentCount, paidCount + 1) WHERE id = :id")
+    suspend fun markNextPaid(id: String)
 }
 
 @Dao
@@ -195,6 +213,9 @@ interface DebtDao {
 
     @Query("DELETE FROM debts WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE debts SET settled = :settled WHERE id = :id")
+    suspend fun setSettled(id: String, settled: Boolean)
 }
 
 @Database(entities = [TransactionEntity::class, TaskEntity::class, CategoryEntity::class, RecurringBillEntity::class, GoalEntity::class, VaultItemEntity::class, InstallmentPlanEntity::class, DebtEntity::class], version = 4, exportSchema = true)

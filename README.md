@@ -1,10 +1,10 @@
-# Drey Manager
+# NxusLife
 
 Aplicativo Android de gerenciamento pessoal, construído em Kotlin e Jetpack Compose. A proposta é reunir finanças, lembretes, metas e outros recursos pessoais em uma experiência local, simples e segura.
 
 ## Estado atual
 
-Este repositório contém a primeira versão local do aplicativo: painel inicial, lançamentos financeiros, tarefas e uma consulta de atualização feita na inicialização. O app busca um manifesto em `https://updateappdrey.nxuslab.com/manifest.json`, compara o `versionCode` publicado com a versão instalada e mostra um comunicado quando há uma versão mais recente.
+Este repositório contém a versão local do aplicativo: painel inicial, lançamentos, tarefas, contas recorrentes, metas, parcelamentos, valores a receber, relatórios, backup e cofre local. O app busca um manifesto em `https://updateappdrey.nxuslab.com/manifest.json`, compara o `versionCode` publicado com a versão instalada e mostra um comunicado quando há uma versão mais recente.
 
 O aplicativo **não instala atualizações silenciosamente**. A ação do comunicado apenas abre uma URL HTTPS para que o usuário escolha baixar a nova versão.
 
@@ -71,11 +71,12 @@ Para publicar esse endpoint sem interferir nos demais sites da VM, consulte a
 - [x] Navegação inicial entre painel, finanças e tarefas.
 - [x] Finanças: receitas, despesas, saldo e resumo mensal.
 - [x] Tarefas locais com prazo opcional e conclusão.
-- [ ] Lembretes e tarefas recorrentes com notificações.
-- [ ] Metas pessoais e financeiras.
-- [ ] Migração da persistência local da V1 para Room.
-- [ ] Backup e restauração criptografados.
-- [ ] Cofre de senhas com desenho de segurança e auditoria próprios.
+- [x] Metas, contas recorrentes, parcelamentos e valores a receber.
+- [x] Backup/restauração em JSON para os dados não sensíveis.
+- [x] Cofre local com Android Keystore, biometria/bloqueio do aparelho e bloqueio de capturas de tela.
+- [ ] Lembretes com horário escolhido e tarefas recorrentes.
+- [ ] Backup criptografado.
+- [ ] Edição, confirmação de exclusão e desfazer em todos os registros.
 - [ ] Pipeline de build, testes e publicação de APK assinado.
 - [ ] Manifesto assinado ou distribuição por canal oficial.
 
