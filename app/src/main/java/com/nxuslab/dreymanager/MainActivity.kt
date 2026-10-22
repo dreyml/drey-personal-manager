@@ -107,16 +107,18 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     var taskDialog by remember { mutableStateOf(false) }
     var recurringDialog by remember { mutableStateOf(false) }
     var goalDialog by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
-                listOf("Início", "Finanças", "Planejar", "Relatórios", "Tarefas", "Cofre").forEachIndexed { index, name ->
+            Box {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
+                listOf("Início", "Finanças", "Planejar", "Tarefas").forEachIndexed { index, name ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Text(listOf("◉", "◈", "⌁", "▥", "✓", "🔒")[index]) },
+                        icon = { Text(listOf("◉", "◈", "⌁", "✓")[index]) },
                         label = { Text(name) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -127,10 +129,28 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
                         ),
                     )
                 }
+                    NavigationBarItem(
+                        selected = tab >= 4,
+                        onClick = { moreMenu = true },
+                        icon = { Text("⋯") },
+                        label = { Text("Mais") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
+                DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }, modifier = Modifier.align(Alignment.TopEnd)) {
+                    DropdownMenuItem(text = { Text("Relatórios") }, onClick = { tab = 4; moreMenu = false })
+                    DropdownMenuItem(text = { Text("Cofre") }, onClick = { tab = 5; moreMenu = false })
+                }
             }
         },
         floatingActionButton = {
-            if (tab == 1 || tab == 2 || tab == 4 || tab == 5) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
+            if (tab == 1 || tab == 2 || tab == 3) FloatingActionButton(containerColor = MaterialTheme.colorScheme.primary, onClick = {
                 if (tab == 1) transactionDialog = true else if (tab == 2) recurringDialog = true else taskDialog = true
             }) { Text("+") }
         },
@@ -139,8 +159,8 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
             0 -> HomeScreen(Modifier.padding(padding), transactions, tasks, recurringBills, goals, updates, { tab = 1 }, { tab = 2 }, { exportLauncher.launch("drey-manager-backup.json") }, { importLauncher.launch(arrayOf("application/json", "text/json")) })
             1 -> FinanceScreen(Modifier.padding(padding), transactions, categories, installmentPlans, debts, viewModel::deleteTransaction, viewModel::deleteInstallment, viewModel::deleteDebt, viewModel::addInstallment, viewModel::addDebt)
             2 -> PlanningScreen(Modifier.padding(padding), recurringBills, goals, categories, viewModel::addRecurringBill, viewModel::addGoal, { goalDialog = true })
-            3 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
-            4 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
+            3 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask)
+            4 -> ReportsScreen(Modifier.padding(padding), transactions, categories)
             else -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel::deleteVaultItem, viewModel::addVaultItem)
         }
     }
