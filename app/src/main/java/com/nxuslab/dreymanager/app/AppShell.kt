@@ -78,6 +78,7 @@ import com.nxuslab.dreymanager.data.LegacyWipe
 import com.nxuslab.dreymanager.feature.gasto.AddExpenseSheet
 import com.nxuslab.dreymanager.feature.gastos.WeekScreen
 import com.nxuslab.dreymanager.feature.plano.PlanoScreen
+import com.nxuslab.dreymanager.feature.mais.MoreScreen
 import com.nxuslab.dreymanager.notifications.Notifier
 import com.nxuslab.dreymanager.notifications.Reminders
 import android.Manifest
@@ -240,7 +241,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
                 PlanoScreen(initialTab = tab, onMessage = { scope.launch { snackbar.showSnackbar(it) } })
             }
             composable(Routes.MAIS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.MAIS })) {
-                MoreShell(state)
+                MoreScreen(update = state.update, onMessage = { scope.launch { snackbar.showSnackbar(it) } })
             }
         }
     }
@@ -287,41 +288,6 @@ private fun BottomBar(navController: NavHostController, route: String?) {
                 ),
             )
         }
-    }
-}
-
-/** Aba Mais provisória: por enquanto só mostra o aviso de atualização. */
-@Composable
-private fun MoreShell(state: AppState) {
-    val context = LocalContext.current
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Mais", style = MaterialTheme.typography.headlineMedium)
-        when (val update = state.update) {
-            is UpdateState.Available -> AlertCard(
-                title = "Nova versão ${update.manifest.versionName}",
-                message = update.manifest.message,
-                kind = AlertKind.INFO,
-                actionLabel = "Baixar",
-                onAction = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.manifest.downloadUrl))) },
-            )
-            UpdateState.Checking -> Text("Procurando atualizações…", color = NxusColors.TextMuted)
-            UpdateState.UpToDate -> Text("NxusLife ${BuildConfig.VERSION_NAME} está atualizado.", color = NxusColors.TextMuted)
-            UpdateState.Unavailable -> Text("Não foi possível verificar atualizações agora.", color = NxusColors.TextMuted)
-        }
-    }
-}
-
-@Composable
-private fun Placeholder(title: String, description: String, action: (@Composable () -> Unit)? = null) {
-    Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, color = NxusColors.AccentLight)
-        Spacer(Modifier.height(8.dp))
-        Text(description, color = NxusColors.TextMuted, textAlign = TextAlign.Center)
-        action?.let { Spacer(Modifier.height(16.dp)); it() }
     }
 }
 
