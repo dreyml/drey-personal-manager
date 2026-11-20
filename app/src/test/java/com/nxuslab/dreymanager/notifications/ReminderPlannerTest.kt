@@ -47,6 +47,12 @@ class ReminderPlannerTest {
     }
 
     @Test
+    fun semSaldoCadastradoNaoAvisaFalta() {
+        val noAccount = snapshot.copy(accounts = emptyList())
+        assertTrue(ReminderPlanner.morning(noAccount, wednesday).none { it.key == "falta" })
+    }
+
+    @Test
     fun desejoQueAtingiuOPreco() {
         val ready = snapshot.copy(wishes = listOf(Wish("w", "Fone", 50_000, priority = WishPriority.MEDIA)), savedByWish = mapOf("w" to 50_000L))
         assertEquals(listOf("w"), ReminderPlanner.newlyReadyWishes(ready, wednesday).map { it.id })

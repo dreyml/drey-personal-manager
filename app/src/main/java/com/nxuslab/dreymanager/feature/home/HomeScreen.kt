@@ -76,7 +76,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             loading = false,
             week = snapshot.week(today),
             envelopes = snapshot.envelopeStatus(today),
-            shortfall = snapshot.forecast(today).shortfalls.firstOrNull(),
+            // Sem saldo cadastrado a previsão parte de zero e acusaria falta sem motivo.
+            shortfall = if (snapshot.accounts.isEmpty()) null else snapshot.forecast(today).shortfalls.firstOrNull(),
             payoff = snapshot.payoffPlan(today),
             debtTotalCents = snapshot.debtTotalCents(),
             upcoming = snapshot.upcoming(today),

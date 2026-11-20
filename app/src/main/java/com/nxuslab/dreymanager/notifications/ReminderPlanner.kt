@@ -40,7 +40,8 @@ object ReminderPlanner {
         snapshot.upcoming(today, days = 1).filter { it.date == tomorrow }.forEach {
             add(PlannedNotice("vence-${it.title}", Channel.VENCIMENTOS, "Amanhã vence ${it.title}", Money.format(it.amountCents), "home"))
         }
-        snapshot.forecast(today).shortfalls.firstOrNull { !it.date.isAfter(today.plusDays(3)) }?.let {
+        // Sem saldo cadastrado não há como prever falta de verdade.
+        snapshot.forecast(today).shortfalls.takeIf { snapshot.accounts.isNotEmpty() }.orEmpty().firstOrNull { !it.date.isAfter(today.plusDays(3)) }?.let {
             add(
                 PlannedNotice(
                     "falta", Channel.ALERTAS, "Vai faltar dinheiro",

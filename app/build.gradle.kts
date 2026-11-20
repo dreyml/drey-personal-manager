@@ -72,6 +72,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("androidx.navigation:navigation-compose:2.9.0")
+    // A biometria puxa o fragment 1.2.x, que derruba o app ao pedir permissão pelo ActivityResult
+    // ("Can only use lower 16 bits for requestCode"). Versões 1.3+ corrigem.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
