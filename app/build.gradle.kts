@@ -19,9 +19,9 @@ android {
         applicationId = "com.nxuslab.dreymanager"
         minSdk = 26
         targetSdk = 36
-        // A 0.9.4 publicada no servidor usa versionCode 13; a 2.0 precisa ser maior.
-        versionCode = 14
-        versionName = "2.0.0"
+        // Publicadas: 0.9.4 (13), 2.0.0 (14). Cada versão nova precisa de um número maior.
+        versionCode = 15
+        versionName = "2.0.1"
         buildConfigField(
             "String",
             "UPDATE_MANIFEST_URL",
@@ -98,6 +98,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    // org.json real para testes na JVM (o android.jar só traz stubs).
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.room:room-testing:2.8.5")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

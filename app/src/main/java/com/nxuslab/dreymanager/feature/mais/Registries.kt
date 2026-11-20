@@ -61,7 +61,11 @@ import com.nxuslab.dreymanager.domain.model.IncomeKind
 import com.nxuslab.dreymanager.domain.money.Money
 import com.nxuslab.dreymanager.domain.money.MoneyParser
 import com.nxuslab.dreymanager.domain.money.MoneyResult
+import com.nxuslab.dreymanager.domain.model.AccountKind
+import com.nxuslab.dreymanager.domain.model.VariableBill
+import com.nxuslab.dreymanager.feature.common.cardUsedCents
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.UUID
 
 private fun newId() = UUID.randomUUID().toString()
@@ -189,20 +193,28 @@ internal fun AccountsSection(data: FinanceSnapshot, vm: MoreViewModel, onMessage
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Account?>(null) }
     RegistryList("Contas bancárias", "Atualize o saldo de vez em quando para a previsão \"vai faltar?\" ficar certa.", "Adicionar conta", { editing = Account(newId(), "", 0, LocalDate.now()) }) {
-        items(data.accounts, key = { it.id }) { CompactRow(it.name, "atualizado em ${it.updatedAt.br()}", Money.format(it.balanceCents), onClick = { editing = it }) }
+        items(data.accounts, key = { it.id }) {
+            CompactRow((if (it.kind == AccountKind.DINHEIRO) "💵 " else "🏦 ") + it.name, "saldo informado em ${it.updatedAt.br()}", Money.format(data.currentBalance(it)), onClick = { editing = it })
+        }
     }
     editing?.let { account ->
         var name by remember(account.id) { mutableStateOf(account.name) }
-        var text by remember(account.id) { mutableStateOf(centsText(account.balanceCents)) }
-        var balance by remember(account.id) { mutableStateOf<Long?>(account.balanceCents) }
+        var text by remember(account.id) { mutableStateOf(centsText(data.currentBalance(account))) }
+        var balance by remember(account.id) { mutableStateOf<Long?>(data.currentBalance(account)) }
+        var kind by remember(account.id) { mutableStateOf(account.kind) }
         val exists = data.accounts.any { it.id == account.id }
         EditDialog(
             title = if (exists) account.name else "Nova conta",
             canSave = name.isNotBlank() && (text.isBlank() || balance != null),
             onDismiss = { editing = null },
-            onSave = { editing = null; scope.save({ vm.repository.saveAccount(account.copy(name = name.trim(), balanceCents = balance ?: 0, updatedAt = LocalDate.now())) }, onMessage, "Saldo atualizado.") },
+            onSave = { editing = null; scope.save({ vm.repository.saveAccount(account.copy(name = name.trim(), balanceCents = balance ?: 0, kind = kind)) }, onMessage, "Saldo atualizado.") },
             onDelete = if (exists) ({ editing = null; scope.save({ vm.repository.deleteAccount(account.id) }, onMessage, "Conta excluída.") }) else null,
         ) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(AccountKind.BANCO to "Banco", AccountKind.DINHEIRO to "Carteira").forEachIndexed { i, (k, label) ->
+                    SegmentedButton(selected = kind == k, onClick = { kind = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+                }
+            }
             OutlinedTextField(name, { name = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             MoneyField(text, { text = it }, "Saldo de hoje", onValid = { balance = it })
         }
@@ -258,7 +270,9 @@ internal fun CardsSection(data: FinanceSnapshot, vm: MoreViewModel, onMessage: (
         items(data.cards, key = { it.id }) { card ->
             val total = data.debts.filter { it.cardId == card.id }.sumOf { it.balanceCents }
             val status = when (card.status) { CardStatus.ATIVO -> ""; CardStatus.QUITADO -> " · quitado"; CardStatus.CANCELADO -> " · cancelado" }
-            CompactRow(card.name, "fecha dia ${card.closingDay} · vence dia ${card.dueDay}$status", Money.format(total), trailingColor = if (total > 0) NxusColors.Danger else NxusColors.Positive, onClick = { editing = card })
+            val goal = if (card.cancelGoal) " · cancelar" else ""
+            val limitInfo = card.limitCents?.let { " · disponível ${Money.format(it - data.cardUsedCents(card.id, LocalDate.now()))}" } ?: ""
+            CompactRow(card.name, "fecha dia ${card.closingDay} · vence dia ${card.dueDay}$status$goal$limitInfo", Money.format(total), trailingColor = if (total > 0) NxusColors.Danger else NxusColors.Positive, onClick = { editing = card })
         }
     }
     editing?.let { card ->
@@ -278,11 +292,78 @@ internal fun CardsSection(data: FinanceSnapshot, vm: MoreViewModel, onMessage: (
     }
 }
 
+// ---------------- Contas variáveis ----------------
+
+@Composable
+internal fun VariableBillsSection(data: FinanceSnapshot, vm: MoreViewModel, onMessage: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val month = YearMonth.now()
+    var editing by remember { mutableStateOf<VariableBill?>(null) }
+    var recording by remember { mutableStateOf<VariableBill?>(null) }
+    RegistryList(
+        "Contas variáveis",
+        "Contas de todo mês sem valor fixo (energia, celular…). O orçamento usa a estimativa até você lançar o valor real do mês.",
+        "Adicionar conta variável",
+        { editing = VariableBill(newId(), "", 10, 0) },
+    ) {
+        items(data.variableBills, key = { it.id }) { bill ->
+            val actual = data.variableActuals[bill.id to month]
+            Column(Modifier.fillMaxWidth()) {
+                CompactRow(
+                    bill.title,
+                    "dia ${bill.dayOfMonth} · " + if (actual != null) "valor deste mês lançado" else "estimativa ${Money.format(bill.estimateCents)}${if (bill.active) "" else " · pausada"}",
+                    Money.format(actual ?: bill.estimateCents),
+                    trailingColor = if (actual != null) NxusColors.Text else NxusColors.TextMuted,
+                    onClick = { editing = bill },
+                )
+                TextButton(onClick = { recording = bill }) { Text(if (actual == null) "Lançar valor deste mês" else "Corrigir valor deste mês") }
+            }
+        }
+    }
+    editing?.let { bill ->
+        var title by remember(bill.id) { mutableStateOf(bill.title) }
+        var text by remember(bill.id) { mutableStateOf(centsText(bill.estimateCents)) }
+        var estimate by remember(bill.id) { mutableStateOf(bill.estimateCents.takeIf { it > 0 }) }
+        var day by remember(bill.id) { mutableStateOf<Int?>(bill.dayOfMonth) }
+        var active by remember(bill.id) { mutableStateOf(bill.active) }
+        val exists = data.variableBills.any { it.id == bill.id }
+        EditDialog(
+            title = if (exists) bill.title else "Nova conta variável",
+            canSave = title.isNotBlank() && estimate != null && day != null,
+            onDismiss = { editing = null },
+            onSave = { editing = null; scope.save({ vm.repository.saveVariableBill(bill.copy(title = title.trim(), estimateCents = estimate!!, dayOfMonth = day!!, active = active)) }, onMessage, "Conta salva.") },
+            onDelete = if (exists) ({ editing = null; scope.save({ vm.repository.deleteVariableBill(bill.id) }, onMessage, "Conta excluída.") }) else null,
+        ) {
+            OutlinedTextField(title, { title = it }, label = { Text("Nome (ex.: Energia)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            MoneyField(text, { text = it }, "Valor estimado por mês", onValid = { estimate = it })
+            DayInput("Dia do vencimento", bill.dayOfMonth) { day = it }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("Ativa", modifier = Modifier.weight(1f)); Switch(active, { active = it }) }
+        }
+    }
+    recording?.let { bill ->
+        var text by remember(bill.id) { mutableStateOf(data.variableActuals[bill.id to month]?.let(::centsText).orEmpty()) }
+        var cents by remember(bill.id) { mutableStateOf(data.variableActuals[bill.id to month]) }
+        EditDialog(
+            title = "${bill.title} deste mês",
+            canSave = cents != null,
+            onDismiss = { recording = null },
+            onSave = { recording = null; scope.save({ vm.repository.saveVariableValue(bill.id, month, cents!!) }, onMessage, "${bill.title}: ${Money.format(cents!!)} lançado.") },
+            onDelete = null,
+        ) {
+            Text("Estimativa: ${Money.format(bill.estimateCents)}", color = NxusColors.TextMuted)
+            MoneyField(text, { text = it }, "Valor real da conta", onValid = { cents = it })
+        }
+    }
+}
+
 private val debtKinds = listOf(DebtKind.FATURA_ABERTA to "Fatura", DebtKind.PARCELA to "Parcela", DebtKind.ROTATIVO to "Rotativo")
 
 @Composable
 private fun CardEditor(card: Card, debts: List<CardDebt>, exists: Boolean, onDismiss: () -> Unit, onSave: (Card, List<CardDebt>, List<String>) -> Unit, onDelete: () -> Unit) {
     var name by remember { mutableStateOf(card.name) }
+    var limitText by remember { mutableStateOf(card.limitCents?.let(::centsText).orEmpty()) }
+    var limit by remember { mutableStateOf(card.limitCents) }
+    var cancelGoal by remember { mutableStateOf(card.cancelGoal) }
     var closing by remember { mutableStateOf<Int?>(card.closingDay) }
     var due by remember { mutableStateOf<Int?>(card.dueDay) }
     var interestText by remember { mutableStateOf(card.monthlyInterestBp?.let { centsText(it.toLong()) }.orEmpty()) }
@@ -308,6 +389,16 @@ private fun CardEditor(card: Card, debts: List<CardDebt>, exists: Boolean, onDis
                         DayInput("Vence dia", card.dueDay, Modifier.weight(1f)) { due = it }
                     }
                     OutlinedTextField(interestText, { interestText = it }, label = { Text("Juros ao mês (%), se souber") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    MoneyField(limitText, { limitText = it }, "Limite do cartão (opcional)", onValid = { limit = it })
+                    val used = current.sumOf { it.balanceCents }
+                    limit?.let { Text("Usado: ${Money.format(used)} · disponível: ${Money.format(it - used)}", color = if (it - used < 0) NxusColors.Danger else NxusColors.TextMuted) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Quero cancelar quando quitar")
+                            Text("O plano foca neste cartão primeiro.", color = NxusColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(cancelGoal, { cancelGoal = it })
+                    }
 
                     SectionHeader("Dívidas")
                     if (current.isEmpty()) Text("Nenhuma dívida neste cartão.", color = NxusColors.TextMuted)
@@ -347,7 +438,16 @@ private fun CardEditor(card: Card, debts: List<CardDebt>, exists: Boolean, onDis
                     Button(
                         onClick = {
                             val bp = (MoneyParser.parse(interestText) as? MoneyResult.Valid)?.cents?.toInt()
-                            onSave(card.copy(name = name.trim(), closingDay = closing!!, dueDay = due!!, monthlyInterestBp = bp), current, removed.toList())
+                            // Dívida preenchida mas não adicionada entra junto: antes ela sumia ao salvar.
+                            val pendingCount = remaining.toIntOrNull()
+                            val pendingDebt = value?.takeIf { kind != DebtKind.PARCELA || (pendingCount != null && pendingCount > 0) }?.let {
+                                CardDebt(newId(), card.id, kind, description.trim().ifBlank { debtKinds.first { k -> k.first == kind }.second }, it, if (kind == DebtKind.PARCELA) pendingCount else null, nextDue ?: LocalDate.now())
+                            }
+                            onSave(
+                                card.copy(name = name.trim(), closingDay = closing!!, dueDay = due!!, monthlyInterestBp = bp, limitCents = limit.takeIf { limitText.isNotBlank() }, cancelGoal = cancelGoal),
+                                current + listOfNotNull(pendingDebt),
+                                removed.toList(),
+                            )
                         },
                         enabled = name.isNotBlank() && closing != null && due != null,
                     ) { Text("Salvar") }

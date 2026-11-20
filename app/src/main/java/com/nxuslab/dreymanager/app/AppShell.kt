@@ -227,6 +227,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
                     onOpenPlan = { navController.navigateTab(Routes.PLANO) },
                     onOpenForecast = { navController.navigateTab("${Routes.PLANO}?aba=${PlanoTab.PREVISAO.name}") },
                     onOpenMore = { navController.navigateTab(Routes.MAIS) },
+                    onMessage = { scope.launch { snackbar.showSnackbar(it) } },
                 )
             }
             composable(Routes.GASTOS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.GASTOS })) {

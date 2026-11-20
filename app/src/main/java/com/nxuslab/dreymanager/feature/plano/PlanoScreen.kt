@@ -55,6 +55,7 @@ import com.nxuslab.dreymanager.domain.payoff.PayoffChange
 import com.nxuslab.dreymanager.domain.payoff.PayoffPlanner
 import com.nxuslab.dreymanager.domain.payoff.PayoffResult
 import com.nxuslab.dreymanager.feature.common.budgetFor
+import com.nxuslab.dreymanager.feature.common.cardUsedCents
 import com.nxuslab.dreymanager.feature.common.payoffPlan
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -123,7 +124,14 @@ private fun CardsTab(data: FinanceSnapshot, viewModel: PlanoViewModel, onMessage
         when (plan) {
             is PayoffResult.Plan -> {
                 item {
-                    Text(plan.debtFreeMonth?.let { "Livre do cartão em ${PayoffPlanner.label(it)}" } ?: "Sem dívida", style = MaterialTheme.typography.headlineMedium, color = NxusColors.AccentLight)
+                    val goalNames = plan.goalCards.mapNotNull { id -> data.cards.firstOrNull { it.id == id }?.name }
+                    val headline = if (goalNames.isNotEmpty() && plan.goalFreeMonth != null) {
+                        "${goalNames.joinToString(" e ")} zera em ${PayoffPlanner.label(plan.goalFreeMonth)}"
+                    } else {
+                        plan.debtFreeMonth?.let { "Livre do cartão em ${PayoffPlanner.label(it)}" } ?: "Sem dívida"
+                    }
+                    Text(headline, style = MaterialTheme.typography.headlineMedium, color = NxusColors.AccentLight)
+                    if (goalNames.isNotEmpty()) plan.debtFreeMonth?.let { Text("Todas as dívidas de cartão terminam em ${PayoffPlanner.label(it)}.", color = NxusColors.Text) }
                     Text(plan.explanation, color = NxusColors.TextMuted)
                 }
                 item {
@@ -135,9 +143,10 @@ private fun CardsTab(data: FinanceSnapshot, viewModel: PlanoViewModel, onMessage
                     val balance = data.debts.filter { it.cardId == cardId }.sumOf { it.balanceCents }
                     val position = plan.order.indexOf(cardId) + 1
                     val interest = card?.monthlyInterestBp?.let { " · juros %d,%02d%% a.m.".format(it / 100, it % 100) } ?: ""
+                    val limit = card?.limitCents?.let { " · disponível ${Money.format(it - data.cardUsedCents(cardId, today))}" } ?: ""
                     CompactRow(
-                        "${position}º ${card?.name ?: cardId}",
-                        "zera em ${plan.payoffMonthByCard[cardId]?.let(PayoffPlanner::label) ?: "—"}$interest",
+                        "${position}º ${card?.name ?: cardId}${if (card?.cancelGoal == true) " · cancelar" else ""}",
+                        "zera em ${plan.payoffMonthByCard[cardId]?.let(PayoffPlanner::label) ?: "—"}$interest$limit",
                         Money.format(balance),
                         trailingColor = NxusColors.Danger,
                     )

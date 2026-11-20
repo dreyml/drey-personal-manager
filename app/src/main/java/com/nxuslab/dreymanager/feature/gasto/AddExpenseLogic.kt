@@ -8,6 +8,11 @@ import com.nxuslab.dreymanager.domain.budget.EnvelopeState
 import com.nxuslab.dreymanager.domain.budget.GuardResult
 import com.nxuslab.dreymanager.domain.budget.SpendGuard
 import com.nxuslab.dreymanager.domain.budget.WeekBudget
+import com.nxuslab.dreymanager.domain.model.CardDebt
+import com.nxuslab.dreymanager.domain.model.DebtKind
+import com.nxuslab.dreymanager.domain.model.clampDay
+import com.nxuslab.dreymanager.domain.payoff.PayoffPlanner
+import com.nxuslab.dreymanager.domain.payoff.PayoffResult
 import com.nxuslab.dreymanager.domain.model.Expense
 import com.nxuslab.dreymanager.domain.model.Income
 import com.nxuslab.dreymanager.domain.model.IncomeKind
@@ -41,10 +46,14 @@ object AddExpenseLogic {
         categoryId: String,
         method: PaymentMethod,
         cardId: String?,
+        accountId: String? = null,
     ): ExpenseReview {
         val card = if (method == PaymentMethod.CARTAO) snapshot.cards.firstOrNull { it.id == cardId } else null
         val invoice = card?.let { SpendGuard.invoiceDueMonth(today, it.closingDay, it.dueDay) }
-        val expense = Expense(UUID.randomUUID().toString(), amountCents, categoryId, today, method, card?.id, invoice)
+        val expense = Expense(
+            UUID.randomUUID().toString(), amountCents, categoryId, today, method, card?.id, invoice,
+            accountId = if (method == PaymentMethod.CARTAO) null else accountId,
+        )
 
         val week = snapshot.week(today) as? WeekBudget.Ready
             ?: return ExpenseReview(guard = null, expense = expense, remainingAfterCents = null)
@@ -68,9 +77,26 @@ object AddExpenseLogic {
     }
 
     /** Renda extra: a parte destinada à quitação segue o percentual dos ajustes. */
-    fun extraIncome(today: LocalDate, amountCents: Long, percentToDebt: Int): Income {
+    fun extraIncome(today: LocalDate, amountCents: Long, percentToDebt: Int, accountId: String? = null): Income {
         val (toDebt, _) = BudgetCalculator.splitExtra(amountCents, percentToDebt)
-        return Income(UUID.randomUUID().toString(), IncomeKind.EXTRA, amountCents, date = today, toDebtCents = toDebt)
+        return Income(UUID.randomUUID().toString(), IncomeKind.EXTRA, amountCents, date = today, toDebtCents = toDebt, accountId = accountId)
+    }
+
+    /**
+     * Nova compra parcelada no cartão: a primeira parcela cai na fatura em que a compra entra.
+     * Devolve a dívida e quantos meses ela atrasa a saída do(s) cartão(ões) a cancelar.
+     */
+    fun installment(snapshot: FinanceSnapshot, today: LocalDate, cardId: String, description: String, installmentCents: Long, count: Int): InstallmentReview {
+        val card = snapshot.cards.first { it.id == cardId }
+        val dueMonth = SpendGuard.invoiceDueMonth(today, card.closingDay, card.dueDay)
+        val debt = CardDebt(UUID.randomUUID().toString(), cardId, DebtKind.PARCELA, description.ifBlank { "Parcelado" }, installmentCents, count, dueMonth.clampDay(card.dueDay))
+        val month = YearMonth.from(today)
+        val extra = snapshot.settings.budget.payoffExtraMonthlyCents
+        fun freeMonth(debts: List<CardDebt>) = (PayoffPlanner.plan(debts, snapshot.cards, extra, month) as? PayoffResult.Plan)?.let { it.goalFreeMonth ?: it.debtFreeMonth }
+        val before = freeMonth(snapshot.debts)
+        val after = freeMonth(snapshot.debts + debt)
+        val delay = if (before != null && after != null) java.time.temporal.ChronoUnit.MONTHS.between(before, after).toInt() else null
+        return InstallmentReview(debt, card.name, installmentCents * count, delay, after)
     }
 
     /** Categorias mais usadas nos últimos 60 dias primeiro. */
@@ -79,3 +105,5 @@ object AddExpenseLogic {
         return snapshot.categories.sortedWith(compareByDescending<Category> { recent[it.id] ?: 0 }.thenBy { it.name })
     }
 }
+
+data class InstallmentReview(val debt: CardDebt, val cardName: String, val totalCents: Long, val payoffDelayMonths: Int?, val newFreeMonth: YearMonth?)

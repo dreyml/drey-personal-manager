@@ -95,6 +95,13 @@ fun FinanceSnapshot.upcoming(today: LocalDate, days: Int = 7): List<UpcomingItem
 
 fun FinanceSnapshot.debtTotalCents(): Long = debts.sumOf { it.balanceCents }
 
+/** Quanto do limite do cartão está comprometido: dívidas cadastradas + compras reservadas em faturas futuras. */
+fun FinanceSnapshot.cardUsedCents(cardId: String, today: LocalDate): Long {
+    val month = YearMonth.from(today)
+    val reserved = expenses.filter { it.cardId == cardId && it.reservedForInvoice != null && !it.reservedForInvoice.isBefore(month) }.sumOf { it.amountCents }
+    return debts.filter { it.cardId == cardId }.sumOf { it.balanceCents } + reserved
+}
+
 data class AccountBalance(val account: com.nxuslab.dreymanager.data.repo.Account, val currentCents: Long)
 
 /** Carteira primeiro, depois os bancos, com o saldo já ajustado pelos lançamentos. */

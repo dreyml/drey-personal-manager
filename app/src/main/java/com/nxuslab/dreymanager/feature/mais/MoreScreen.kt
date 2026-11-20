@@ -86,7 +86,7 @@ internal fun CoroutineScope.save(action: suspend () -> Result<Unit>, onMessage: 
 }
 
 internal enum class Section(val title: String) {
-    RENDA("Renda e extras"), CONTAS_FIXAS("Contas fixas"), CONTAS("Contas bancárias"),
+    RENDA("Renda e extras"), CONTAS_FIXAS("Contas fixas"), CONTAS_VARIAVEIS("Contas variáveis"), CONTAS("Contas e carteira"),
     CATEGORIAS("Categorias e envelopes"), CARTOES("Cartões e dívidas"), AJUSTES("Ajustes"),
 }
 
@@ -96,11 +96,13 @@ fun MoreScreen(update: UpdateState, onMessage: (String) -> Unit, viewModel: More
     val data = snapshot ?: return
     var section by rememberSaveable { mutableStateOf<Section?>(null) }
     BackHandler(enabled = section != null) { section = null }
+    ImportFlow.Host(viewModel, onMessage)
 
     when (section) {
-        null -> Menu(data, update, onOpen = { section = it })
+        null -> Menu(data, update, onOpen = { section = it }, onImport = { ImportFlow.start() })
         Section.RENDA -> IncomeSection(data, viewModel, onMessage)
         Section.CONTAS_FIXAS -> BillsSection(data, viewModel, onMessage)
+        Section.CONTAS_VARIAVEIS -> VariableBillsSection(data, viewModel, onMessage)
         Section.CONTAS -> AccountsSection(data, viewModel, onMessage)
         Section.CATEGORIAS -> CategoriesSection(data, viewModel, onMessage)
         Section.CARTOES -> CardsSection(data, viewModel, onMessage)
@@ -109,7 +111,7 @@ fun MoreScreen(update: UpdateState, onMessage: (String) -> Unit, viewModel: More
 }
 
 @Composable
-private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -> Unit) {
+private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -> Unit, onImport: () -> Unit) {
     val context = LocalContext.current
     val notificationsOn = remember { Notifier.enabled(context) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -130,6 +132,7 @@ private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -
         val counts = mapOf(
             Section.RENDA to "${data.incomes.size} cadastrada(s)",
             Section.CONTAS_FIXAS to "${data.fixedBills.size} conta(s) · ${Money.format(data.fixedBills.filter { it.active }.sumOf { it.amountCents })}/mês",
+            Section.CONTAS_VARIAVEIS to "${data.variableBills.size} conta(s) · energia, celular…",
             Section.CONTAS to "saldo ${Money.format(data.openingBalanceCents)}",
             Section.CATEGORIAS to "${data.envelopes.size} envelope(s)",
             Section.CARTOES to "${data.cards.size} cartão(ões) · ${Money.format(data.debts.sumOf { it.balanceCents })} em dívidas",
@@ -147,6 +150,18 @@ private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -
                     }
                     Text("›", style = MaterialTheme.typography.titleLarge, color = NxusColors.TextMuted)
                 }
+            }
+        }
+        item {
+            Row(
+                Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(14.dp)).clickable(onClick = onImport).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Importar dados", style = MaterialTheme.typography.titleMedium)
+                    Text("Arquivo .json gerado para o NxusLife", color = NxusColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
+                }
+                Text("›", style = MaterialTheme.typography.titleLarge, color = NxusColors.TextMuted)
             }
         }
         item { SectionHeader("Atualização") }
@@ -239,6 +254,69 @@ private fun SettingsSection(data: FinanceSnapshot, viewModel: MoreViewModel, onM
                     scope.save({ viewModel.updateSettings { it.copy(budget = it.budget.copy(weeklyLimitOverrideCents = null)) } }, onMessage, "Voltou ao limite sugerido.")
                 }) { Text("Usar sugerido") }
             }
+        }
+    }
+}
+
+/** Importação: escolhe o arquivo, valida tudo, mostra o resumo e só grava depois da confirmação. */
+private object ImportFlow {
+    private var launch: (() -> Unit)? = null
+    fun start() { launch?.invoke() }
+
+    @Composable
+    fun Host(viewModel: MoreViewModel, onMessage: (String) -> Unit) {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var pending by remember { mutableStateOf<com.nxuslab.dreymanager.data.repo.ImportBundle?>(null) }
+        val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                try {
+                    val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val input = context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("sem acesso ao arquivo")
+                        input.use {
+                            val bytes = it.readBytes()
+                            if (bytes.size > com.nxuslab.dreymanager.data.ImportCodec.MAX_BYTES) throw java.io.IOException("arquivo grande demais")
+                            String(bytes, Charsets.UTF_8)
+                        }
+                    }
+                    pending = com.nxuslab.dreymanager.data.ImportCodec.decode(text)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    onMessage(e.message ?: "Não foi possível ler o arquivo.")
+                }
+            }
+        }
+        launch = { launcher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+
+        pending?.let { bundle ->
+            val debts = bundle.cards.sumOf { it.debts.size }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { pending = null },
+                containerColor = NxusColors.Surface,
+                title = { Text("Importar dados?") },
+                text = {
+                    Text(
+                        "${bundle.cards.size} cartão(ões): ${bundle.cards.joinToString { it.card.name }} · $debts dívida(s)" +
+                            (if (bundle.accounts.isNotEmpty()) " · ${bundle.accounts.size} conta(s)" else "") +
+                            (if (bundle.fixedBills.size + bundle.variableBills.size > 0) " · ${bundle.fixedBills.size + bundle.variableBills.size} conta(s) a pagar" else "") +
+                            ".\n\nCartões com o mesmo nome terão as dívidas substituídas.",
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        pending = null
+                        scope.launch {
+                            viewModel.repository.importData(bundle).fold(
+                                { s -> onMessage("Importado: ${s.cards} cartão(ões) e ${s.debts} dívida(s)" + if (s.replacedCards.isNotEmpty()) " (substituídas: ${s.replacedCards.joinToString()})." else ".") },
+                                { onMessage(it.message ?: "Erro ao importar.") },
+                            )
+                        }
+                    }) { Text("Importar") }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { pending = null }) { Text("Cancelar") } },
+            )
         }
     }
 }

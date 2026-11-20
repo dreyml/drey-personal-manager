@@ -37,8 +37,14 @@ object ReminderPlanner {
     /** Avisos da manhã: vencimentos de amanhã, falta prevista, desejos prontos e resumo semanal. */
     fun morning(snapshot: FinanceSnapshot, today: LocalDate): List<PlannedNotice> = buildList {
         val tomorrow = today.plusDays(1)
+        val month = java.time.YearMonth.from(tomorrow)
+        val pendingVariable = snapshot.variableBills.filter { it.active && snapshot.variableActuals[it.id to month] == null }.map { it.title }.toSet()
         snapshot.upcoming(today, days = 1).filter { it.date == tomorrow }.forEach {
-            add(PlannedNotice("vence-${it.title}", Channel.VENCIMENTOS, "Amanhã vence ${it.title}", Money.format(it.amountCents), "home"))
+            if (it.title in pendingVariable) {
+                add(PlannedNotice("vence-${it.title}", Channel.VENCIMENTOS, "Amanhã vence ${it.title}", "Lance o valor real da conta (estimativa ${Money.format(it.amountCents)}).", "mais"))
+            } else {
+                add(PlannedNotice("vence-${it.title}", Channel.VENCIMENTOS, "Amanhã vence ${it.title}", Money.format(it.amountCents), "home"))
+            }
         }
         // Sem saldo cadastrado não há como prever falta de verdade.
         snapshot.forecast(today).shortfalls.takeIf { snapshot.accounts.isNotEmpty() }.orEmpty().firstOrNull { !it.date.isAfter(today.plusDays(3)) }?.let {

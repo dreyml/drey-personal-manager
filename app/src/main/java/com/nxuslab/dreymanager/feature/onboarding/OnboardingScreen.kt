@@ -234,7 +234,16 @@ private fun CardDialog(initial: CardDraft, onDismiss: () -> Unit, onDelete: () -
                     if (initial.name.isNotBlank()) TextButton(onClick = onDelete) { Text("Remover", color = NxusColors.Danger) }
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
-                    Button(onClick = { onSave(card.copy(name = card.name.trim())) }, enabled = card.name.isNotBlank()) { Text("Salvar") }
+                    Button(onClick = {
+                        // Parcela preenchida mas não adicionada entra junto: antes ela sumia ao salvar.
+                        val count = installmentCount.toIntOrNull()
+                        val pending = if (installmentDesc.isNotBlank() && installmentValue != null && count != null && count > 0) {
+                            listOf(InstallmentDraft(UUID.randomUUID().toString(), installmentDesc.trim(), installmentValue!!, count))
+                        } else {
+                            emptyList()
+                        }
+                        onSave(card.copy(name = card.name.trim(), installments = card.installments + pending))
+                    }, enabled = card.name.isNotBlank()) { Text("Salvar") }
                 }
             }
         }
