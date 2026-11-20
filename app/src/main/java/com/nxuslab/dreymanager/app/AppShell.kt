@@ -75,7 +75,13 @@ import com.nxuslab.dreymanager.core.theme.NxusColors
 import com.nxuslab.dreymanager.core.ui.AlertCard
 import com.nxuslab.dreymanager.core.ui.AlertKind
 import com.nxuslab.dreymanager.data.LegacyWipe
+import com.nxuslab.dreymanager.feature.gasto.AddExpenseSheet
+import com.nxuslab.dreymanager.feature.home.HomeScreen
 import com.nxuslab.dreymanager.feature.onboarding.OnboardingScreen
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberCoroutineScope
 import com.nxuslab.dreymanager.update.HttpUpdateRepository
 import com.nxuslab.dreymanager.update.UpdateChecker
 import com.nxuslab.dreymanager.update.UpdateState
@@ -158,9 +164,12 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
     val route = current?.destination?.route
     var addExpenseOpen by rememberSaveable { mutableStateOf(false) }
     val showChrome = route != null && route != Routes.ONBOARDING
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = NxusColors.Background,
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = { if (showChrome) BottomBar(navController, route) },
         floatingActionButton = {
             if (showChrome) {
@@ -186,7 +195,11 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
                 })
             }
             composable(Routes.HOME, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.HOME })) {
-                Placeholder("Início", "Quanto ainda posso gastar esta semana.")
+                HomeScreen(
+                    onOpenPlan = { navController.navigateTab(Routes.PLANO) },
+                    onOpenForecast = { navController.navigateTab(Routes.PLANO) },
+                    onOpenMore = { navController.navigateTab(Routes.MAIS) },
+                )
             }
             composable(Routes.GASTOS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.GASTOS })) {
                 Placeholder("Gastos", "Seus gastos da semana, dia a dia.")
@@ -201,13 +214,27 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
     }
 
     if (addExpenseOpen) {
-        ModalBottomSheet(onDismissRequest = { addExpenseOpen = false }, containerColor = NxusColors.Surface) {
-            Placeholder("Lançar gasto", "O lançamento em 2 toques chega na etapa de gastos.")
+        ModalBottomSheet(
+            onDismissRequest = { addExpenseOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = NxusColors.Surface,
+        ) {
+            AddExpenseSheet(onDone = { message ->
+                addExpenseOpen = false
+                message?.let { scope.launch { snackbar.showSnackbar(it) } }
+            })
         }
     }
     if (state.startupError != null) {
         AlertCard("Algo deu errado", state.startupError, AlertKind.DANGER, Modifier.padding(16.dp))
     }
+}
+
+/** Troca de aba sem empilhar telas: voltar sempre leva à Início. */
+private fun NavHostController.navigateTab(route: String) = navigate(route) {
+    popUpTo(Routes.HOME) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
 }
 
 @Composable
@@ -216,13 +243,7 @@ private fun BottomBar(navController: NavHostController, route: String?) {
         tabs.forEach { tab ->
             NavigationBarItem(
                 selected = route == tab.route,
-                onClick = {
-                    navController.navigate(tab.route) {
-                        popUpTo(Routes.HOME) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
+                onClick = { navController.navigateTab(tab.route) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
                 label = { Text(tab.label) },
                 colors = NavigationBarItemDefaults.colors(

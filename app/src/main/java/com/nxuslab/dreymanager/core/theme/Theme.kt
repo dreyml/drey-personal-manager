@@ -38,6 +38,9 @@ private val scheme = darkColorScheme(
     onPrimaryContainer = NxusColors.AccentLight,
     secondary = NxusColors.AccentLight,
     onSecondary = NxusColors.Background,
+    // Botões segmentados e chips selecionados: bordô escuro em vez do lilás padrão do Material.
+    secondaryContainer = Color(0xFF5A1F30),
+    onSecondaryContainer = NxusColors.Text,
     background = NxusColors.Background,
     onBackground = NxusColors.Text,
     surface = NxusColors.Surface,
