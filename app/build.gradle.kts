@@ -29,8 +29,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Assinatura do release: lida de keystore.properties na raiz (fora do Git). Sem o arquivo,
+    // o release sai sem assinatura e precisa ser assinado à parte.
+    val keystoreFile = rootProject.file("keystore.properties")
+    if (keystoreFile.exists()) {
+        val keystore = java.util.Properties().apply { keystoreFile.inputStream().use { load(it) } }
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystore.getProperty("storeFile"))
+                storePassword = keystore.getProperty("storePassword")
+                keyAlias = keystore.getProperty("keyAlias")
+                keyPassword = keystore.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (keystoreFile.exists()) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

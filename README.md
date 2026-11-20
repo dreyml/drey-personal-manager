@@ -1,91 +1,92 @@
 # NxusLife
 
-Aplicativo Android de gerenciamento pessoal, construído em Kotlin e Jetpack Compose. A proposta é reunir finanças, lembretes, metas e outros recursos pessoais em uma experiência local, simples e segura.
+Aplicativo Android de **finanças pessoais para sair do cartão de crédito** e gastar com limite consciente. Kotlin + Jetpack Compose, tudo local no aparelho.
 
-## Estado atual
+A tela inicial responde uma pergunta: **quanto ainda posso gastar esta semana?**
 
-Este repositório contém a versão local do aplicativo: painel inicial, lançamentos, tarefas, contas recorrentes, metas, parcelamentos, valores a receber, relatórios, backup e cofre local. O app busca um manifesto em `https://updateappdrey.nxuslab.com/manifest.json`, compara o `versionCode` publicado com a versão instalada e mostra um comunicado quando há uma versão mais recente.
+## O que o app faz (2.0 — Fase 1)
 
-O aplicativo **não instala atualizações silenciosamente**. A ação do comunicado apenas abre uma URL HTTPS para que o usuário escolha baixar a nova versão.
+- **Limite semanal automático**: renda − contas fixas − faturas/parcelas − extra de quitação − desejos de prioridade alta − reserva, distribuído pelos dias do mês. Dá para baixar o limite, nunca subir. Excesso de uma semana é descontado da seguinte.
+- **Envelopes** mensais nas categorias que mais pesam (delivery, lazer…).
+- **Lançamento em 2 toques** (valor + categoria) com **alerta firme**: aviso aos 80% e confirmação ao estourar, com "Cancelar" em destaque.
+- **Compra emergencial no cartão**: conta na semana como Pix e o valor fica reservado para a fatura certa.
+- **Plano de saída do cartão**: juros maiores primeiro quando informados, senão menor saldo; linha do tempo, data em que cada cartão zera e **simulador** ("+R$ X por mês", "quitar esta dívida agora").
+- **Previsão "vai faltar?"** de 90 dias com simulação "e se" (nunca gravada).
+- **Lista de desejos**: quanto guardar por mês, data realista, comparação com parcelar no cartão.
+- **Notificações**: "lançou tudo de hoje?" no horário escolhido, vencimentos de amanhã, falta prevista, desejo pronto e resumo semanal.
+- Configuração inicial em 5 passos (todos puláveis), bloqueio por biometria ou PIN do aparelho, tema escuro "Bordô profundo".
 
-## Arquitetura inicial
+Próximas fases: tarefas e lembretes, metas/cofrinhos, valores a receber e cofre de senhas (Fase 2); leitura de notificações do banco (Fase 3). Especificação e plano em [`docs/superpowers/`](docs/superpowers/).
+
+## Arquitetura
 
 ```text
-Jetpack Compose (UI)
-        │
-        ▼
-MainViewModel (estado da tela)
-        │
-        ▼
-UpdateChecker (regra de comparação)
-        │
-        ▼
-UpdateRepository (manifesto HTTPS)
+feature/   telas + ViewModels (onboarding, home, gasto, gastos, plano, mais)
+   │
+   ▼
+data/      Room (nxuslife.db) + FinanceRepository → snapshot de modelos de domínio
+   │
+   ▼
+domain/    regras em Kotlin puro, testadas na JVM
+           MoneyParser · BudgetCalculator · SpendGuard · PayoffPlanner
+           CashForecaster · WishPlanner
+core/      tema, componentes e gráficos
+notifications/  ReminderPlanner (puro) + workers do WorkManager
+update/    checagem do manifesto de atualização
 ```
 
-- **UI:** Kotlin + Jetpack Compose e Material 3.
-- **Estado:** ViewModel + StateFlow.
-- **Dados:** Room + SQLite local, com valores financeiros armazenados em centavos.
-- **Atualizações:** requisição HTTPS curta, executada fora da thread principal.
-- **Falha segura:** indisponibilidade do servidor não bloqueia o app.
-- **Dados futuros:** Room para dados locais; Android Keystore para material criptográfico.
-- **Tarefas futuras:** WorkManager para lembretes e verificações periódicas autorizadas.
+- Dinheiro sempre em centavos (`Long`); nenhum `Double` para valores.
+- Toda gravação devolve `Result` e a tela mostra sucesso ou erro.
+- Na primeira abertura da 2.0, os dados da versão 0.x são apagados (recomeço do zero).
 
-## Contrato do manifesto
+## Como compilar e testar
 
-Publique no servidor o arquivo `/manifest.json` com `Content-Type: application/json`:
+Requisitos: Android Studio (JDK do próprio Studio), Android SDK 36.
+
+```bash
+./gradlew testDebugUnitTest          # regras de negócio e lógica das telas (JVM)
+./gradlew connectedDebugAndroidTest  # banco Room num emulador/aparelho
+./gradlew assembleDebug              # APK de desenvolvimento
+./gradlew assembleRelease            # APK de produção (R8)
+```
+
+No build de debug as capturas de tela ficam liberadas para testes; no release o app usa `FLAG_SECURE`.
+
+## Assinatura do release
+
+Crie um `keystore.properties` na raiz (já está no `.gitignore`) apontando para a sua chave:
+
+```properties
+storeFile=../chaves/nxuslife-release.jks
+storePassword=…
+keyAlias=nxuslife
+keyPassword=…
+```
+
+Com o arquivo presente, `assembleRelease` gera `app/build/outputs/apk/release/app-release.apk` já assinado. **A chave nunca entra no Git** e deve ter cópia de segurança: sem ela não dá para publicar atualizações por cima da versão instalada.
+
+## Publicar uma atualização
+
+1. Aumente `versionCode` (sempre maior que o publicado) e `versionName` em `app/build.gradle.kts`.
+2. Gere o release assinado e envie para `/var/www/updateappdrey/downloads/nxuslife-<versão>.apk` no servidor.
+3. Publique o manifesto em `/var/www/updateappdrey/manifest.json` (exemplo: [`server/manifest-2.0.0.json`](server/manifest-2.0.0.json)):
 
 ```json
 {
-  "versionCode": 2,
-  "versionName": "0.2.0",
-  "message": "Uma nova versão do Drey Manager está disponível.",
-  "downloadUrl": "https://updateappdrey.nxuslab.com/downloads/drey-manager-0.2.0.apk"
+  "versionCode": 14,
+  "versionName": "2.0.0",
+  "message": "Texto do comunicado",
+  "downloadUrl": "https://updateappdrey.nxuslab.com/downloads/nxuslife-2.0.0.apk"
 }
 ```
 
-Regras:
-
-- `versionCode` deve ser um inteiro e sempre aumentar a cada versão.
-- `versionName` é o nome legível mostrado ao usuário.
-- `message` é o texto do comunicado.
-- `downloadUrl` precisa usar HTTPS.
-- O DNS `updateappdrey.nxuslab.com` deve apontar para a VM OCI `137.131.136.166`, com certificado TLS válido.
-
-Um exemplo pronto está em [`server/manifest.example.json`](server/manifest.example.json).
-Para publicar esse endpoint sem interferir nos demais sites da VM, consulte a
-[configuração Nginx isolada](server/nginx/README.md).
-
-## Como executar
-
-1. Instale o Android Studio com Android SDK 36 e JDK 17.
-2. Abra a raiz deste repositório no Android Studio.
-3. Aguarde a sincronização do Gradle.
-4. Execute a configuração `app` em um emulador ou aparelho com Android 8.0 ou superior.
-
-## Roadmap
-
-- [x] Estrutura Android em Kotlin + Jetpack Compose.
-- [x] Verificação de atualização na inicialização.
-- [x] Comunicado com link de download, sem instalação silenciosa.
-- [x] Navegação inicial entre painel, finanças e tarefas.
-- [x] Finanças: receitas, despesas, saldo e resumo mensal.
-- [x] Tarefas locais com prazo opcional e conclusão.
-- [x] Metas, contas recorrentes, parcelamentos e valores a receber.
-- [x] Backup/restauração em JSON para os dados não sensíveis.
-- [x] Cofre local com Android Keystore, biometria/bloqueio do aparelho e bloqueio de capturas de tela.
-- [ ] Lembretes com horário escolhido e tarefas recorrentes.
-- [ ] Backup criptografado.
-- [ ] Edição, confirmação de exclusão e desfazer em todos os registros.
-- [ ] Pipeline de build, testes e publicação de APK assinado.
-- [ ] Manifesto assinado ou distribuição por canal oficial.
+O app só aceita manifesto e download por HTTPS e **no mesmo domínio do manifesto**, e nunca instala sozinho: o comunicado abre o link para o usuário baixar. Configuração do Nginx: [`server/nginx/README.md`](server/nginx/README.md).
 
 ## Segurança
 
-- Somente URLs HTTPS são aceitas para manifesto e download.
-- O servidor de atualização deve usar certificado válido e ser mantido atualizado.
-- A chave privada usada para assinar o APK nunca deve entrar no Git.
-- O cofre de senhas será tratado como módulo separado; não deve ser implementado sem modelo de ameaça, criptografia autenticada e revisão de segurança.
+- Sem backup automático do Android (`allowBackup=false`) e sem tráfego HTTP em texto puro.
+- Bloqueio do app por biometria forte ou credencial do aparelho, com novo bloqueio após 5 minutos fora.
+- O cofre de senhas volta na Fase 2 com chave do Keystore presa à autenticação do usuário.
 
 ## Licença
 
