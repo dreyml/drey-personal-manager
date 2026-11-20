@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".NxusApp"
         android:allowBackup="false"
         android:icon="@drawable/nxuslife_logo"
         android:label="NxusLife"

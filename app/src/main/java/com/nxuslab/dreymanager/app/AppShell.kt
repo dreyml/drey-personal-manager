@@ -1,0 +1,341 @@
+package com.nxuslab.dreymanager.app
+
+import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
+import com.nxuslab.dreymanager.BuildConfig
+import com.nxuslab.dreymanager.NxusApp
+import com.nxuslab.dreymanager.R
+import com.nxuslab.dreymanager.core.theme.NxusColors
+import com.nxuslab.dreymanager.core.ui.AlertCard
+import com.nxuslab.dreymanager.core.ui.AlertKind
+import com.nxuslab.dreymanager.data.LegacyWipe
+import com.nxuslab.dreymanager.update.HttpUpdateRepository
+import com.nxuslab.dreymanager.update.UpdateChecker
+import com.nxuslab.dreymanager.update.UpdateState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+// ---------- Estado do app ----------
+
+data class AppState(
+    val ready: Boolean = false,
+    val onboardingDone: Boolean = false,
+    val update: UpdateState = UpdateState.Checking,
+    val startupError: String? = null,
+)
+
+class AppViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = (application as NxusApp).repository
+    private val _state = MutableStateFlow(AppState())
+    val state: StateFlow<AppState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val wipe = LegacyWipe.runOnce(application, repository)
+            val seed = repository.seedCategoriesIfEmpty()
+            val error = (wipe.exceptionOrNull() ?: seed.exceptionOrNull())?.let { "Não foi possível preparar o app: ${it.message}" }
+            _state.update { it.copy(ready = true, onboardingDone = repository.settings().onboardingDone, startupError = error) }
+        }
+        viewModelScope.launch {
+            val checker = UpdateChecker(HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL), BuildConfig.VERSION_CODE.toLong())
+            val result = checker.check()
+            _state.update { it.copy(update = result) }
+        }
+    }
+
+    fun onboardingFinished() = _state.update { it.copy(onboardingDone = true) }
+}
+
+// ---------- Rotas ----------
+
+object Routes {
+    const val ONBOARDING = "onboarding"
+    const val HOME = "home"
+    const val GASTOS = "gastos"
+    const val PLANO = "plano"
+    const val MAIS = "mais"
+    const val DEEP_LINK_BASE = "nxuslife://"
+}
+
+private data class Tab(val route: String, val label: String, val icon: ImageVector)
+
+private val tabs = listOf(
+    Tab(Routes.HOME, "Início", Icons.Filled.Home),
+    Tab(Routes.GASTOS, "Gastos", Icons.Filled.ReceiptLong),
+    Tab(Routes.PLANO, "Plano", Icons.Filled.CalendarMonth),
+    Tab(Routes.MAIS, "Mais", Icons.Filled.MoreHoriz),
+)
+
+// ---------- Casca ----------
+
+@Composable
+fun AppShell(viewModel: AppViewModel = viewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    AppLock {
+        if (!state.ready) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            NxusNavHost(state, onOnboardingFinished = viewModel::onboardingFinished)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
+    val navController = rememberNavController()
+    val current by navController.currentBackStackEntryAsState()
+    val route = current?.destination?.route
+    var addExpenseOpen by rememberSaveable { mutableStateOf(false) }
+    val showChrome = route != null && route != Routes.ONBOARDING
+
+    Scaffold(
+        containerColor = NxusColors.Background,
+        bottomBar = { if (showChrome) BottomBar(navController, route) },
+        floatingActionButton = {
+            if (showChrome) {
+                ExtendedFloatingActionButton(
+                    onClick = { addExpenseOpen = true },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("Gasto") },
+                    containerColor = NxusColors.Accent,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                )
+            }
+        },
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = if (state.onboardingDone) Routes.HOME else Routes.ONBOARDING,
+            modifier = Modifier.padding(padding),
+        ) {
+            composable(Routes.ONBOARDING) {
+                Placeholder("Configuração inicial", "Renda, contas fixas, cartões e envelopes. Chega na próxima etapa.") {
+                    TextButton(onClick = { navController.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) {
+                        Text("Ir para o início por enquanto")
+                    }
+                }
+            }
+            composable(Routes.HOME, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.HOME })) {
+                Placeholder("Início", "Quanto ainda posso gastar esta semana.")
+            }
+            composable(Routes.GASTOS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.GASTOS })) {
+                Placeholder("Gastos", "Seus gastos da semana, dia a dia.")
+            }
+            composable(Routes.PLANO, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.PLANO })) {
+                Placeholder("Plano", "Saída do cartão, previsão e desejos.")
+            }
+            composable(Routes.MAIS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.MAIS })) {
+                MoreShell(state)
+            }
+        }
+    }
+
+    if (addExpenseOpen) {
+        ModalBottomSheet(onDismissRequest = { addExpenseOpen = false }, containerColor = NxusColors.Surface) {
+            Placeholder("Lançar gasto", "O lançamento em 2 toques chega na etapa de gastos.")
+        }
+    }
+    if (state.startupError != null) {
+        AlertCard("Algo deu errado", state.startupError, AlertKind.DANGER, Modifier.padding(16.dp))
+    }
+}
+
+@Composable
+private fun BottomBar(navController: NavHostController, route: String?) {
+    NavigationBar(containerColor = NxusColors.Surface) {
+        tabs.forEach { tab ->
+            NavigationBarItem(
+                selected = route == tab.route,
+                onClick = {
+                    navController.navigate(tab.route) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                label = { Text(tab.label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = NxusColors.AccentLight,
+                    selectedTextColor = NxusColors.AccentLight,
+                    indicatorColor = NxusColors.SurfaceHigh,
+                    unselectedIconColor = NxusColors.TextMuted,
+                    unselectedTextColor = NxusColors.TextMuted,
+                ),
+            )
+        }
+    }
+}
+
+/** Aba Mais provisória: por enquanto só mostra o aviso de atualização. */
+@Composable
+private fun MoreShell(state: AppState) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Mais", style = MaterialTheme.typography.headlineMedium)
+        when (val update = state.update) {
+            is UpdateState.Available -> AlertCard(
+                title = "Nova versão ${update.manifest.versionName}",
+                message = update.manifest.message,
+                kind = AlertKind.INFO,
+                actionLabel = "Baixar",
+                onAction = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.manifest.downloadUrl))) },
+            )
+            UpdateState.Checking -> Text("Procurando atualizações…", color = NxusColors.TextMuted)
+            UpdateState.UpToDate -> Text("NxusLife ${BuildConfig.VERSION_NAME} está atualizado.", color = NxusColors.TextMuted)
+            UpdateState.Unavailable -> Text("Não foi possível verificar atualizações agora.", color = NxusColors.TextMuted)
+        }
+    }
+}
+
+@Composable
+private fun Placeholder(title: String, description: String, action: (@Composable () -> Unit)? = null) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineMedium, color = NxusColors.AccentLight)
+        Spacer(Modifier.height(8.dp))
+        Text(description, color = NxusColors.TextMuted, textAlign = TextAlign.Center)
+        action?.let { Spacer(Modifier.height(16.dp)); it() }
+    }
+}
+
+// ---------- Bloqueio ----------
+
+private const val RELOCK_AFTER_MS = 5 * 60 * 1000L
+
+/**
+ * Bloqueio ao abrir: biometria forte ou PIN/padrão/senha do aparelho (na API 28–29 o Android não
+ * aceita BIOMETRIC_STRONG junto com DEVICE_CREDENTIAL). Bloqueia de novo depois de 5 minutos em
+ * segundo plano. Sem bloqueio de tela configurado no aparelho, não há como autenticar e o app abre.
+ */
+@Composable
+fun AppLock(content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val authenticators = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) BIOMETRIC_STRONG or DEVICE_CREDENTIAL else BIOMETRIC_WEAK or DEVICE_CREDENTIAL
+    val canAuthenticate = remember { BiometricManager.from(context).canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS }
+    var unlocked by rememberSaveable { mutableStateOf(!canAuthenticate) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var stoppedAt by rememberSaveable { mutableStateOf(0L) }
+
+    fun prompt() {
+        val host = activity ?: return
+        error = null
+        BiometricPrompt(host, ContextCompat.getMainExecutor(host), object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { unlocked = true }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_CANCELED) error = errString.toString()
+            }
+        }).authenticate(
+            BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Abrir NxusLife")
+                .setSubtitle("Use a digital ou o bloqueio do aparelho")
+                .setAllowedAuthenticators(authenticators)
+                .build(),
+        )
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, canAuthenticate) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> stoppedAt = SystemClock.elapsedRealtime()
+                Lifecycle.Event.ON_START -> if (canAuthenticate && stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt > RELOCK_AFTER_MS) unlocked = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (unlocked) {
+        content()
+        return
+    }
+    LaunchedEffect(Unit) { prompt() }
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Image(painterResource(R.drawable.nxuslife_logo), contentDescription = null, modifier = Modifier.size(96.dp))
+        Spacer(Modifier.height(24.dp))
+        Text("NxusLife está bloqueado", style = MaterialTheme.typography.titleLarge)
+        error?.let { Text(it, color = NxusColors.Danger, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp)) }
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = ::prompt) { Text("Desbloquear") }
+    }
+}
