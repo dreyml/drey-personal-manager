@@ -77,6 +77,10 @@ import com.nxuslab.dreymanager.core.ui.AlertKind
 import com.nxuslab.dreymanager.data.LegacyWipe
 import com.nxuslab.dreymanager.feature.gasto.AddExpenseSheet
 import com.nxuslab.dreymanager.feature.gastos.WeekScreen
+import com.nxuslab.dreymanager.feature.plano.PlanoScreen
+import com.nxuslab.dreymanager.feature.plano.PlanoTab
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.nxuslab.dreymanager.feature.home.HomeScreen
 import com.nxuslab.dreymanager.feature.onboarding.OnboardingScreen
 import androidx.compose.material3.SnackbarHost
@@ -198,15 +202,20 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
             composable(Routes.HOME, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.HOME })) {
                 HomeScreen(
                     onOpenPlan = { navController.navigateTab(Routes.PLANO) },
-                    onOpenForecast = { navController.navigateTab(Routes.PLANO) },
+                    onOpenForecast = { navController.navigateTab("${Routes.PLANO}?aba=${PlanoTab.PREVISAO.name}") },
                     onOpenMore = { navController.navigateTab(Routes.MAIS) },
                 )
             }
             composable(Routes.GASTOS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.GASTOS })) {
                 WeekScreen(onMessage = { scope.launch { snackbar.showSnackbar(it) } })
             }
-            composable(Routes.PLANO, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.PLANO })) {
-                Placeholder("Plano", "Saída do cartão, previsão e desejos.")
+            composable(
+                Routes.PLANO + "?aba={aba}",
+                arguments = listOf(navArgument("aba") { type = NavType.StringType; defaultValue = PlanoTab.CARTOES.name }),
+                deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.PLANO + "?aba={aba}" }),
+            ) { entry ->
+                val tab = runCatching { PlanoTab.valueOf(entry.arguments?.getString("aba").orEmpty()) }.getOrDefault(PlanoTab.CARTOES)
+                PlanoScreen(initialTab = tab, onMessage = { scope.launch { snackbar.showSnackbar(it) } })
             }
             composable(Routes.MAIS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.MAIS })) {
                 MoreShell(state)
@@ -243,7 +252,7 @@ private fun BottomBar(navController: NavHostController, route: String?) {
     NavigationBar(containerColor = NxusColors.Surface) {
         tabs.forEach { tab ->
             NavigationBarItem(
-                selected = route == tab.route,
+                selected = route?.substringBefore('?') == tab.route,
                 onClick = { navController.navigateTab(tab.route) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
                 label = { Text(tab.label) },

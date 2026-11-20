@@ -59,7 +59,13 @@ fun FinanceSnapshot.envelopeStatus(today: LocalDate): List<EnvelopeStatus> {
 
 fun FinanceSnapshot.forecastInputs(today: LocalDate): ForecastInputs {
     val week = week(today) as? WeekBudget.Ready
+    val inputs = budgetFor(today)
+    // Cada mês gasta o que o próprio orçamento deixa para as semanas (meses com fatura grande gastam menos).
+    val byMonth = (0L..3L).map { YearMonth.from(today).plusMonths(it) }.associateWith { month ->
+        BudgetCalculator.monthPlan(month, inputs).availableForWeeksCents.coerceAtLeast(0) / month.lengthOfMonth()
+    }
     return ForecastInputs(
+        dailySpendByMonth = byMonth,
         openingBalanceCents = openingBalanceCents,
         incomes = incomes,
         fixedBills = fixedBills,

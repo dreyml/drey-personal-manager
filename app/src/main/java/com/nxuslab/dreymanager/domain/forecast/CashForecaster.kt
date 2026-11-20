@@ -30,8 +30,10 @@ data class ForecastInputs(
     val cards: List<Card> = emptyList(),
     /** Compras no cartão já lançadas; as reservadas saem no vencimento da fatura. */
     val expenses: List<Expense> = emptyList(),
-    /** Gasto diário previsto (limite semanal ÷ 7). */
+    /** Gasto diário previsto quando o mês não está em [dailySpendByMonth]. */
     val dailySpendCents: Long = 0,
+    /** Gasto diário previsto por mês: o que o orçamento daquele mês deixa para as semanas ÷ dias. */
+    val dailySpendByMonth: Map<YearMonth, Long> = emptyMap(),
     val payoffExtraMonthlyCents: Long = 0,
     val wishesMonthlyCents: Long = 0,
 )
@@ -54,7 +56,8 @@ object CashForecaster {
         for (offset in 0 until days) {
             val date = start.plusDays(offset.toLong())
             val todays = byDate[date].orEmpty()
-            balance += todays.sumOf { it.amountCents } - inputs.dailySpendCents
+            val dailySpend = inputs.dailySpendByMonth[YearMonth.from(date)] ?: inputs.dailySpendCents
+            balance += todays.sumOf { it.amountCents } - dailySpend
             result += ForecastDay(date, balance)
             if (balance < 0 && !negative) {
                 val reason = todays.filter { it.amountCents < 0 }.minByOrNull { it.amountCents }?.reason ?: DAILY_REASON

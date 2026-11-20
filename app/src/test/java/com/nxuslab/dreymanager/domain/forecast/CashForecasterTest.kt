@@ -94,6 +94,17 @@ class CashForecasterTest {
     }
 
     @Test
+    fun gastoDiarioSegueOOrcamentoDeCadaMes() {
+        // Janeiro gasta 1.000/dia; fevereiro só 100/dia (mês com fatura grande).
+        val inputs = healthy.copy(
+            openingBalanceCents = 0, incomes = emptyList(), fixedBills = emptyList(), dailySpendCents = 999_999,
+            dailySpendByMonth = mapOf(YearMonth.of(2027, 1) to 1_000L, YearMonth.of(2027, 2) to 100L),
+        )
+        val days = CashForecaster.forecast(LocalDate.of(2027, 1, 30), 4, inputs).days
+        assertEquals(listOf(-1_000L, -2_000L, -2_100L, -2_200L), days.map { it.balanceCents })
+    }
+
+    @Test
     fun quitacaoEDesejosSaemNoDiaDoSalario() {
         val events = CashForecaster.events(start, 31, healthy.copy(payoffExtraMonthlyCents = 30_000, wishesMonthlyCents = 10_000))
         assertTrue(events.any { it.date == LocalDate.of(2027, 1, 5) && it.amountCents == -30_000L && it.reason == "Quitação do cartão" })
