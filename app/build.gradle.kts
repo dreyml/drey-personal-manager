@@ -70,6 +70,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     testImplementation("junit:junit:4.13.2")
+    // org.json real para testes na JVM (o android.jar só traz stubs).
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

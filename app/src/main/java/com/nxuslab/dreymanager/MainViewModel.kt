@@ -28,10 +28,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.room.withTransaction
+import android.util.Log
+import com.nxuslab.dreymanager.backup.BackupCodec
+import com.nxuslab.dreymanager.backup.BackupFormatException
+import com.nxuslab.dreymanager.backup.BackupSnapshot
+import com.nxuslab.dreymanager.security.VaultException
 import kotlinx.coroutines.flow.first
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlin.math.roundToLong
+
+private const val TAG = "NxusLife"
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val database = PersonalDatabase.get(application)
@@ -74,7 +83,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val savingsJars: StateFlow<List<SavingsJarEntity>> = database.savingsJarDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    var vaultDialog = false
 
     init {
         viewModelScope.launch { seedCategoriesIfNeeded() }
@@ -196,16 +204,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addVaultItem(title: String, username: String, secret: String, notes: String?) {
-        if (title.isBlank() || secret.isBlank()) return
-        viewModelScope.launch { database.vaultDao().insert(VaultItemEntity(java.util.UUID.randomUUID().toString(), title.trim(), username.trim(), VaultCrypto.encrypt(secret), notes?.trim(), System.currentTimeMillis())) }
+    /** Lê o segredo de um item. Exige autenticação recente (o Keystore recusa sem ela). */
+    suspend fun revealVaultSecret(item: VaultItemEntity): Result<String> = vaultCall {
+        VaultCrypto.decrypt(item.encryptedSecret, item.id)
     }
 
-    fun updateVaultItem(existing: VaultItemEntity, title: String, username: String, secret: String, notes: String?) {
-        if (title.isBlank()) return
-        viewModelScope.launch { database.vaultDao().insert(existing.copy(title = title.trim(), username = username.trim(), encryptedSecret = if (secret.isBlank()) existing.encryptedSecret else VaultCrypto.encrypt(secret), notes = notes?.trim()?.takeIf { it.isNotBlank() })) }
+    /** Cria ([existing] nulo) ou edita um item do cofre. Um segredo em branco na edição mantém o atual. */
+    suspend fun saveVaultItem(existing: VaultItemEntity?, title: String, username: String, secret: String): Result<Unit> = vaultCall {
+        require(title.isNotBlank()) { "Informe um nome." }
+        if (existing == null) {
+            require(secret.isNotBlank()) { "Informe a senha ou o segredo." }
+            val id = java.util.UUID.randomUUID().toString()
+            database.vaultDao().insert(VaultItemEntity(id, title.trim(), username.trim(), VaultCrypto.encrypt(secret, id), null, System.currentTimeMillis()))
+        } else {
+            val encrypted = if (secret.isBlank()) existing.encryptedSecret else VaultCrypto.encrypt(secret, existing.id)
+            database.vaultDao().insert(existing.copy(title = title.trim(), username = username.trim(), encryptedSecret = encrypted))
+        }
     }
 
+    /**
+     * Recifra com a chave nova (que exige autenticação) os itens salvos com a chave antiga.
+     * Deve ser chamada logo depois de o usuário desbloquear o cofre. Retorna quantos itens foram
+     * migrados; itens que não puderam ser lidos ficam intactos e a chave antiga é mantida.
+     */
+    suspend fun migrateLegacyVault(): Result<Int> = vaultCall {
+        val legacy = database.vaultDao().observeAll().first().filterNot { VaultCrypto.isCurrentFormat(it.encryptedSecret) }
+        if (legacy.isEmpty()) {
+            VaultCrypto.deleteLegacyKey()
+            return@vaultCall 0
+        }
+        val migrated = legacy.mapNotNull { item ->
+            runCatching { item.copy(encryptedSecret = VaultCrypto.encrypt(VaultCrypto.decrypt(item.encryptedSecret, item.id), item.id)) }.getOrNull()
+        }
+        database.withTransaction { migrated.forEach { database.vaultDao().insert(it) } }
+        if (migrated.size == legacy.size) VaultCrypto.deleteLegacyKey()
+        if (migrated.size < legacy.size) {
+            throw VaultException("${legacy.size - migrated.size} item(ns) antigo(s) do cofre não puderam ser lidos e foram mantidos como estavam.")
+        }
+        migrated.size
+    }
+
+    private suspend fun <T> vaultCall(block: suspend () -> T): Result<T> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(block())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: VaultException) {
+            Result.failure(e)
+        } catch (e: IllegalArgumentException) {
+            Result.failure(VaultException(e.message ?: "Dados inválidos.", e))
+        } catch (e: Exception) {
+            Log.e(TAG, "Falha no cofre", e)
+            Result.failure(VaultException("Não foi possível salvar no cofre. Tente de novo.", e))
+        }
+    }
     fun deleteVaultItem(id: String) { viewModelScope.launch { database.vaultDao().delete(id) } }
 
     fun addInstallment(description: String, total: Double, count: Int, firstDueDate: String) {
@@ -269,71 +321,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setRecurringBillActive(id: String, active: Boolean) { viewModelScope.launch { database.recurringBillDao().setActive(id, active) } }
     fun deleteRecurringBill(id: String) { viewModelScope.launch { database.recurringBillDao().delete(id) } }
 
-    suspend fun exportSnapshot(): String {
-        val root = JSONObject()
-        root.put("exportedAt", System.currentTimeMillis())
-        root.put("transactions", JSONArray(database.transactionDao().observeAll().first().map { row ->
-            JSONObject().apply {
-                put("id", row.id); put("description", row.description); put("amountCents", row.amountCents)
-                put("type", row.type); put("categoryId", row.categoryId); put("createdAt", row.createdAt); put("recurring", row.recurring)
-            }
-        }))
-        root.put("tasks", JSONArray(database.taskDao().observeAll().first().map { row ->
-            JSONObject().apply {
-                put("id", row.id); put("title", row.title); put("dueDate", row.dueDate)
-                put("completed", row.completed); put("reminderAt", row.reminderAt); put("createdAt", row.createdAt)
-            }
-        }))
-        root.put("categories", JSONArray(database.categoryDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("name", row.name); put("color", row.color); put("kind", row.kind) }
-        }))
-        root.put("recurringBills", JSONArray(database.recurringBillDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("title", row.title); put("amountCents", row.amountCents); put("dayOfMonth", row.dayOfMonth); put("categoryId", row.categoryId); put("active", row.active) }
-        }))
-        root.put("goals", JSONArray(database.goalDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("title", row.title); put("targetCents", row.targetCents); put("currentCents", row.currentCents); put("deadline", row.deadline) }
-        }))
-        root.put("installments", JSONArray(database.installmentDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("description", row.description); put("totalCents", row.totalCents); put("installmentCents", row.installmentCents); put("installmentCount", row.installmentCount); put("startMonth", row.startMonth); put("endMonth", row.endMonth); put("dueDay", row.dueDay); put("paidCount", row.paidCount) }
-        }))
-        root.put("debts", JSONArray(database.debtDao().observeAll().first().map { row ->
-            JSONObject().apply { put("id", row.id); put("person", row.person); put("description", row.description); put("amountCents", row.amountCents); put("dueDate", row.dueDate); put("settled", row.settled); put("createdAt", row.createdAt) }
-        }))
-        return root.toString(2)
+    /** Gera o JSON de backup com todas as tabelas, exceto o cofre (a chave dele não sai do aparelho). */
+    suspend fun exportSnapshot(): String = withContext(Dispatchers.IO) {
+        BackupCodec.encode(
+            BackupSnapshot(
+                exportedAt = System.currentTimeMillis(),
+                categories = database.categoryDao().observeAll().first(),
+                transactions = database.transactionDao().observeAll().first(),
+                tasks = database.taskDao().observeAll().first(),
+                recurringBills = database.recurringBillDao().observeAll().first(),
+                goals = database.goalDao().observeAll().first(),
+                installments = database.installmentDao().observeAll().first(),
+                debts = database.debtDao().observeAll().first(),
+                banks = database.bankDao().observeAll().first(),
+                savingsJars = database.savingsJarDao().observeAll().first(),
+            ),
+        )
     }
 
-    fun restoreSnapshot(json: String) {
-        viewModelScope.launch {
-            val root = JSONObject(json)
-            require(root.has("exportedAt")) { "Arquivo de backup inválido." }
-            root.optJSONArray("categories")?.let { array -> database.categoryDao().insertAll((0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                CategoryEntity(o.getString("id"), o.getString("name"), o.getLong("color"), o.optString("kind", "EXPENSE"))
-            }) }
-            root.optJSONArray("transactions")?.let { array -> database.transactionDao().insertAll((0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                TransactionEntity(o.getString("id"), o.getString("description"), o.getLong("amountCents"), o.getString("type"), o.optString("categoryId").takeIf { it != "null" && it.isNotBlank() }, o.getLong("createdAt"), o.optBoolean("recurring"))
-            }) }
-            root.optJSONArray("tasks")?.let { array -> database.taskDao().insertAll((0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                TaskEntity(o.getString("id"), o.getString("title"), o.optString("dueDate").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("completed"), if (o.isNull("reminderAt")) null else o.optLong("reminderAt"), o.getLong("createdAt"))
-            }) }
-            root.optJSONArray("recurringBills")?.let { array -> database.recurringBillDao().insertAll((0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                RecurringBillEntity(o.getString("id"), o.getString("title"), o.getLong("amountCents"), o.getInt("dayOfMonth"), o.optString("categoryId").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("active", true))
-            }) }
-            root.optJSONArray("goals")?.let { array -> database.goalDao().insertAll((0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                GoalEntity(o.getString("id"), o.getString("title"), o.getLong("targetCents"), o.optLong("currentCents"), o.optString("deadline").takeIf { it != "null" && it.isNotBlank() })
-            }) }
-            root.optJSONArray("installments")?.let { array -> (0 until array.length()).forEach { i ->
-                val o = array.getJSONObject(i)
-                database.installmentDao().insert(InstallmentPlanEntity(o.getString("id"), o.getString("description"), o.getLong("totalCents"), o.getLong("installmentCents"), o.getInt("installmentCount"), o.getString("startMonth"), o.getString("endMonth"), o.optInt("dueDay", 1), o.optInt("paidCount")))
-            } }
-            root.optJSONArray("debts")?.let { array -> (0 until array.length()).forEach { i ->
-                val o = array.getJSONObject(i)
-                database.debtDao().insert(DebtEntity(o.getString("id"), o.getString("person"), o.getString("description"), o.getLong("amountCents"), o.optString("dueDate").takeIf { it != "null" && it.isNotBlank() }, o.optBoolean("settled"), o.getLong("createdAt")))
-            } }
+    /** Lê e valida o arquivo sem gravar nada. Use antes de pedir confirmação ao usuário. */
+    suspend fun parseSnapshot(json: String): Result<BackupSnapshot> = withContext(Dispatchers.Default) {
+        try {
+            Result.success(BackupCodec.decode(json))
+        } catch (e: BackupFormatException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Grava um backup já validado numa única transação: ou entra tudo, ou nada.
+     * Registros com o mesmo id são substituídos; registros que não estão no backup são mantidos.
+     */
+    suspend fun restoreSnapshot(snapshot: BackupSnapshot): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            database.withTransaction {
+                database.categoryDao().insertAll(snapshot.categories)
+                database.transactionDao().insertAll(snapshot.transactions)
+                database.taskDao().insertAll(snapshot.tasks)
+                database.recurringBillDao().insertAll(snapshot.recurringBills)
+                database.goalDao().insertAll(snapshot.goals)
+                snapshot.installments.forEach { database.installmentDao().insert(it) }
+                snapshot.debts.forEach { database.debtDao().insert(it) }
+                snapshot.banks.forEach { database.bankDao().insert(it) }
+                snapshot.savingsJars.forEach { database.savingsJarDao().insert(it) }
+            }
+            Result.success(snapshot.totalRecords)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Falha ao restaurar backup", e)
+            Result.failure(Exception("Não foi possível restaurar o backup. Nenhum dado foi alterado.", e))
         }
     }
 }

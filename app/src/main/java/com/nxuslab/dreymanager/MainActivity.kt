@@ -66,7 +66,19 @@ import com.nxuslab.dreymanager.ui.DreyManagerTheme
 import com.nxuslab.dreymanager.ui.screens.HomeScreen
 import com.nxuslab.dreymanager.notifications.ReminderWorker
 import com.nxuslab.dreymanager.notifications.NotificationHelper
-import com.nxuslab.dreymanager.security.VaultCrypto
+import com.nxuslab.dreymanager.backup.BackupCodec
+import com.nxuslab.dreymanager.backup.BackupSnapshot
+import android.util.Log
+import android.widget.Toast
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import java.text.NumberFormat
 import java.time.Instant
@@ -109,7 +121,7 @@ private fun AppUnlockGate(content: @Composable () -> Unit) {
     fun requestAuthentication() {
         val host = activity ?: return
         authenticationError = null
-        BiometricPrompt(host, host.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
+        BiometricPrompt(host, ContextCompat.getMainExecutor(host), object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { stage = "intro" }
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) authenticationError = errString.toString()
@@ -160,18 +172,65 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     var importUri by remember { mutableStateOf<Uri?>(null) }
     val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> exportUri = uri }
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> importUri = uri }
+    var pendingRestore by remember { mutableStateOf<BackupSnapshot?>(null) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(exportUri) {
         exportUri?.let { uri ->
-            val snapshot = viewModel.exportSnapshot()
-            context.contentResolver.openOutputStream(uri)?.use { it.write(snapshot.toByteArray()) }
+            val message = try {
+                val snapshot = viewModel.exportSnapshot()
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("sem acesso ao arquivo")
+                    stream.use { it.write(snapshot.toByteArray(Charsets.UTF_8)) }
+                }
+                "Backup salvo. Os itens do cofre não entram no backup."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("NxusLife", "Falha ao exportar backup", e)
+                "Não foi possível salvar o backup: ${e.localizedMessage ?: "erro desconhecido"}"
+            }
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             exportUri = null
         }
     }
     LaunchedEffect(importUri) {
         importUri?.let { uri ->
-            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { viewModel.restoreSnapshot(it.readText()) }
+            val json = try {
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openInputStream(uri) ?: throw IOException("sem acesso ao arquivo")
+                    stream.use { input -> readLimited(input, BackupCodec.MAX_BYTES) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(context, "Não foi possível ler o arquivo: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                null
+            }
+            json?.let { text ->
+                viewModel.parseSnapshot(text)
+                    .onSuccess { pendingRestore = it }
+                    .onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+            }
             importUri = null
         }
+    }
+    pendingRestore?.let { snapshot ->
+        AlertDialog(
+            onDismissRequest = { pendingRestore = null },
+            title = { Text("Restaurar backup?") },
+            text = { Text("${snapshot.totalRecords} registro(s) serão importados. Registros com o mesmo identificador serão substituídos pela versão do backup; os demais dados do aparelho são mantidos.") },
+            confirmButton = {
+                Button(onClick = {
+                    pendingRestore = null
+                    scope.launch {
+                        viewModel.restoreSnapshot(snapshot)
+                            .onSuccess { Toast.makeText(context, "Backup restaurado: $it registro(s).", Toast.LENGTH_LONG).show() }
+                            .onFailure { Toast.makeText(context, it.message, Toast.LENGTH_LONG).show() }
+                    }
+                }) { Text("Restaurar") }
+            },
+            dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Cancelar") } },
+        )
     }
     val updates by viewModel.updateState.collectAsStateWithLifecycle()
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
@@ -193,7 +252,6 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     var editingDebt by remember { mutableStateOf<DebtEntity?>(null) }
     var editingGoal by remember { mutableStateOf<GoalEntity?>(null) }
     var editingBill by remember { mutableStateOf<RecurringBillEntity?>(null) }
-    var editingVaultItem by remember { mutableStateOf<VaultItemEntity?>(null) }
     var recurringDialog by remember { mutableStateOf(false) }
     var goalDialog by remember { mutableStateOf(false) }
     var moreDestination by rememberSaveable { mutableStateOf<String?>(null) }
@@ -239,7 +297,7 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
             3 -> TasksScreen(Modifier.padding(padding), tasks, viewModel::toggleTask, viewModel::deleteTask, { editingTask = it })
             4 -> when (moreDestination) {
                 "reports" -> ReportsScreen(Modifier.padding(padding), transactions, categories)
-                "vault" -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel::deleteVaultItem, viewModel::addVaultItem, { editingVaultItem = it })
+                "vault" -> VaultScreen(Modifier.padding(padding), vaultItems, viewModel)
                 "banks" -> BanksScreen(Modifier.padding(padding), banks, viewModel::addBank, viewModel::updateBank, viewModel::deleteBank)
                 "jars" -> SavingsJarsScreen(Modifier.padding(padding), savingsJars, viewModel::addSavingsJar, viewModel::updateSavingsJar, viewModel::deleteSavingsJar)
                 else -> MoreScreen(Modifier.padding(padding), onReports = { moreDestination = "reports" }, onVault = { moreDestination = "vault" }, onBanks = { moreDestination = "banks" }, onJars = { moreDestination = "jars" })
@@ -276,7 +334,6 @@ private fun PersonalManagerApp(viewModel: MainViewModel = viewModel()) {
     editingDebt?.let { debt -> DebtDialog(onDismiss = { editingDebt = null }, existing = debt, onSave = { person, description, amount, due -> viewModel.updateDebt(debt, person, description, amount, due); editingDebt = null }) }
     editingGoal?.let { goal -> GoalDialog(onDismiss = { editingGoal = null }, existing = goal, onSave = { title, target, deadline -> viewModel.updateGoal(goal, title, target, deadline); editingGoal = null }) }
     editingBill?.let { bill -> RecurringDialog(categories = categories, onDismiss = { editingBill = null }, existing = bill, onSave = { title, amount, day, categoryId -> viewModel.updateRecurringBill(bill, title, amount, day, categoryId); editingBill = null }) }
-    editingVaultItem?.let { item -> VaultItemDialog(onDismiss = { editingVaultItem = null }, existing = item, onSave = { title, username, secret -> viewModel.updateVaultItem(item, title, username, secret, null); editingVaultItem = null }) }
 }
 
 /*private fun HomeScreen(modifier: Modifier, transactions: List<MoneyTransaction>, tasks: List<PersonalTask>, bills: List<RecurringBillEntity>, goals: List<GoalEntity>, update: UpdateState, openFinance: () -> Unit, openTasks: () -> Unit, exportData: () -> Unit, importData: () -> Unit) {
@@ -589,19 +646,96 @@ private fun MoreActionCard(title: String, subtitle: String, icon: androidx.compo
 }
 
 @Composable
-private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, onDelete: (String) -> Unit, onAdd: (String, String, String, String?) -> Unit, onEdit: (VaultItemEntity) -> Unit) {
+private fun VaultScreen(modifier: Modifier, items: List<VaultItemEntity>, viewModel: MainViewModel) {
     var unlocked by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
+    var editingItem by remember { mutableStateOf<VaultItemEntity?>(null) }
     var revealedSecret by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun toast(message: String?) { Toast.makeText(context, message ?: "Erro no cofre.", Toast.LENGTH_LONG).show() }
+    // Bloqueia de novo e esconde o segredo sempre que o app sai da tela.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) { unlocked = false; revealedSecret = null } }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // Cada operação de cripto pede autenticação: a chave do Keystore só funciona logo após ela.
+    fun withAuth(subtitle: String, action: suspend () -> Unit) {
+        val host = activity ?: return toast("Não foi possível abrir a confirmação de identidade.")
+        authenticateForVault(host, subtitle, onSuccess = { scope.launch { action() } }, onError = ::toast)
+    }
+    val unlock = {
+        withAuth("Confirme sua identidade para abrir o cofre") {
+            unlocked = true
+            viewModel.migrateLegacyVault()
+                .onSuccess { if (it > 0) toast("$it item(ns) do cofre foram protegidos com a nova chave.") }
+                .onFailure { toast(it.message) }
+        }
+    }
+    val reveal = { item: VaultItemEntity ->
+        withAuth("Confirme sua identidade para ver o segredo") {
+            viewModel.revealVaultSecret(item).onSuccess { revealedSecret = it }.onFailure { toast(it.message) }
+        }
+    }
+    val save = { existing: VaultItemEntity?, title: String, username: String, secret: String ->
+        val persist: suspend () -> Unit = {
+            viewModel.saveVaultItem(existing, title, username, secret)
+                .onSuccess { addDialog = false; editingItem = null }
+                .onFailure { toast(it.message) }
+        }
+        // Sem segredo novo não há criptografia, então não precisa autenticar de novo.
+        if (secret.isBlank()) scope.launch { persist() } else withAuth("Confirme sua identidade para salvar o segredo", persist)
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), contentPadding = PaddingValues(bottom = 92.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Cofre", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Text("Seus dados sensíveis ficam protegidos no aparelho.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (!unlocked) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Cofre bloqueado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text("Use biometria ou o bloqueio do aparelho para visualizar seus itens."); Button(onClick = { activity?.let { host -> val prompt = BiometricPrompt(host, host.mainExecutor, object : BiometricPrompt.AuthenticationCallback() { override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { unlocked = true } }); prompt.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle("Desbloquear NxusLife").setSubtitle("Confirme sua identidade para abrir o cofre").setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL).build()) } }) { Text("Desbloquear cofre") } } } }
-        else { item { Button(onClick = { addDialog = true }) { Text("Adicionar item seguro") } }; if (items.isEmpty()) item { Empty("Cofre vazio", "Adicione sua primeira senha ou anotação segura.") }; items(items, key = { it.id }) { item -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold); Text(item.username, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { TextButton(onClick = { revealedSecret = runCatching { VaultCrypto.decrypt(item.encryptedSecret) }.getOrNull() }) { Text("Ver") }; TextButton(onClick = { onEdit(item) }) { Text("Editar") }; TextButton(onClick = { onDelete(item.id) }) { Text("Excluir") } } } } } }
+        if (!unlocked) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Cofre bloqueado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text("Use biometria ou o bloqueio do aparelho para visualizar seus itens."); Button(onClick = { unlock() }) { Text("Desbloquear cofre") } } } }
+        else { item { Button(onClick = { addDialog = true }) { Text("Adicionar item seguro") } }; if (items.isEmpty()) item { Empty("Cofre vazio", "Adicione sua primeira senha ou anotação segura.") }; items(items, key = { it.id }) { item -> Card(Modifier.fillMaxWidth()) { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.SemiBold); Text(item.username, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Column(horizontalAlignment = Alignment.End) { TextButton(onClick = { reveal(item) }) { Text("Ver") }; TextButton(onClick = { editingItem = item }) { Text("Editar") }; TextButton(onClick = { viewModel.deleteVaultItem(item.id) }) { Text("Excluir") } } } } } }
     }
-    if (addDialog) VaultItemDialog(onDismiss = { addDialog = false }, onSave = { title, username, secret -> onAdd(title, username, secret, null); addDialog = false })
+    if (addDialog) VaultItemDialog(onDismiss = { addDialog = false }, onSave = { title, username, secret -> save(null, title, username, secret) })
+    editingItem?.let { item -> VaultItemDialog(onDismiss = { editingItem = null }, existing = item, onSave = { title, username, secret -> save(item, title, username, secret) }) }
     revealedSecret?.let { secret -> AlertDialog(onDismissRequest = { revealedSecret = null }, title = { Text("Segredo") }, text = { Text(secret) }, confirmButton = { TextButton(onClick = { revealedSecret = null }) { Text("Fechar") } }) }
+}
+
+/**
+ * Pede biometria forte ou o bloqueio de tela do aparelho. Na API 28–29 o Android não aceita
+ * BIOMETRIC_STRONG junto com DEVICE_CREDENTIAL, por isso a combinação muda conforme a versão.
+ */
+private fun authenticateForVault(activity: FragmentActivity, subtitle: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+    val authenticators = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    } else {
+        BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    }
+    BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess()
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+            if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON && errorCode != BiometricPrompt.ERROR_CANCELED) {
+                onError(errString.toString())
+            }
+        }
+    }).authenticate(
+        BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Cofre NxusLife")
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(authenticators)
+            .build(),
+    )
+}
+
+/** Lê no máximo [limit] bytes; acima disso recusa, para não carregar arquivos enormes na memória. */
+private fun readLimited(input: InputStream, limit: Int): String {
+    val buffer = ByteArrayOutputStream()
+    val chunk = ByteArray(8 * 1024)
+    while (true) {
+        val read = input.read(chunk)
+        if (read < 0) break
+        buffer.write(chunk, 0, read)
+        if (buffer.size() > limit) throw IOException("arquivo grande demais para ser um backup")
+    }
+    return buffer.toString(Charsets.UTF_8.name())
 }
 
 @Composable
