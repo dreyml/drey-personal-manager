@@ -8,6 +8,7 @@ import com.nxuslab.dreymanager.domain.forecast.CashForecaster
 import com.nxuslab.dreymanager.domain.forecast.Forecast
 import com.nxuslab.dreymanager.domain.forecast.ForecastInputs
 import com.nxuslab.dreymanager.domain.model.BudgetInputs
+import com.nxuslab.dreymanager.domain.model.clampDay
 import com.nxuslab.dreymanager.domain.payoff.PayoffPlanner
 import com.nxuslab.dreymanager.domain.payoff.PayoffResult
 import com.nxuslab.dreymanager.domain.wish.WishPlanner
@@ -75,6 +76,8 @@ fun FinanceSnapshot.forecastInputs(today: LocalDate): ForecastInputs {
         dailySpendCents = (week?.suggestedLimitCents ?: 0) / 7,
         payoffExtraMonthlyCents = settings.budget.payoffExtraMonthlyCents,
         wishesMonthlyCents = highWishMonthlyCents(today),
+        variableBills = variableBills,
+        variableActuals = variableActuals,
     )
 }
 
@@ -91,6 +94,55 @@ fun FinanceSnapshot.upcoming(today: LocalDate, days: Int = 7): List<UpcomingItem
         .map { UpcomingItem(it.date, it.reason, -it.amountCents) }
 
 fun FinanceSnapshot.debtTotalCents(): Long = debts.sumOf { it.balanceCents }
+
+data class AccountBalance(val account: com.nxuslab.dreymanager.data.repo.Account, val currentCents: Long)
+
+/** Carteira primeiro, depois os bancos, com o saldo já ajustado pelos lançamentos. */
+fun FinanceSnapshot.accountBalances(): List<AccountBalance> =
+    accounts.sortedWith(compareBy({ it.kind != com.nxuslab.dreymanager.domain.model.AccountKind.DINHEIRO }, { it.name }))
+        .map { AccountBalance(it, currentBalance(it)) }
+
+/**
+ * O "livre de verdade": o menor entre o que resta do limite da semana e o dinheiro que sobra nas
+ * contas até o próximo salário, depois das contas e faturas que vencem antes dele.
+ */
+data class RealFree(
+    val freeCents: Long,
+    val weekRemainingCents: Long,
+    /** Dinheiro que sobra até o salário; nulo sem contas cadastradas. */
+    val cashUntilPaydayCents: Long?,
+    val nextPayday: LocalDate?,
+    val limitedByCash: Boolean,
+    /** O salário já caiu depois do último saldo informado: os saldos precisam ser conferidos. */
+    val staleBalances: Boolean,
+)
+
+fun FinanceSnapshot.realFree(today: LocalDate, week: WeekBudget.Ready): RealFree {
+    val notCapped = RealFree(week.remainingCents, week.remainingCents, null, null, limitedByCash = false, staleBalances = false)
+    if (accounts.isEmpty()) return notCapped
+    val paydays = incomes.filter { it.kind == com.nxuslab.dreymanager.domain.model.IncomeKind.FIXA && it.dayOfMonth != null }.map { it.dayOfMonth!! }
+    val month = YearMonth.from(today)
+    val candidates = paydays.flatMap { day -> listOf(month.minusMonths(1), month, month.plusMonths(1)).map { it.clampDay(day) } }
+    val lastPayday = candidates.filter { !it.isAfter(today) }.maxOrNull()
+    val nextPayday = candidates.filter { it.isAfter(today) }.minOrNull()
+    val lastUpdate = accounts.maxOf { it.updatedAt }
+    if (lastPayday != null && lastUpdate.isBefore(lastPayday)) return notCapped.copy(nextPayday = nextPayday, staleBalances = true)
+
+    val until = nextPayday ?: today.plusDays(30)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(today, until).toInt().coerceAtLeast(1)
+    val outflows = CashForecaster.events(today, days, forecastInputs(today).copy(payoffExtraMonthlyCents = 0, wishesMonthlyCents = 0))
+        .filter { it.amountCents < 0 && it.date.isBefore(until) }
+        .sumOf { -it.amountCents }
+    val cash = openingBalanceCents - outflows
+    return RealFree(
+        freeCents = minOf(week.remainingCents, cash),
+        weekRemainingCents = week.remainingCents,
+        cashUntilPaydayCents = cash,
+        nextPayday = nextPayday,
+        limitedByCash = cash < week.remainingCents,
+        staleBalances = false,
+    )
+}
 
 data class DayGroup(val date: LocalDate, val expenses: List<com.nxuslab.dreymanager.domain.model.Expense>) {
     val totalCents: Long get() = expenses.sumOf { it.amountCents }

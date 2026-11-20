@@ -63,7 +63,8 @@ object BudgetCalculator {
         return MonthPlan(
             month = month,
             incomeCents = fixedIncome + extrasInMonth.sumOf { it.amountCents },
-            fixedBillsCents = inputs.fixedBills.filter { it.active }.sumOf { it.amountCents },
+            fixedBillsCents = inputs.fixedBills.filter { it.active }.sumOf { it.amountCents } +
+                inputs.variableBills.filter { it.active }.sumOf { inputs.variableAmount(it, month) },
             cardObligationsCents = cardObligations(month, inputs.debts, inputs.expenses),
             payoffCents = inputs.settings.payoffExtraMonthlyCents + extrasInMonth.sumOf { it.toDebtCents },
             highWishesCents = inputs.highPriorityWishMonthlyCents,

@@ -117,6 +117,17 @@ class PayoffPlannerTest {
     }
 
     @Test
+    fun cartaoACancelarVemPrimeiroMesmoComJurosMenores() {
+        // Itaú tem juros maiores, mas o usuário quer cancelar o Nubank: ele vem primeiro.
+        val debts = listOf(rotativo("i", "itau", 400_000), rotativo("n", "nubank", 300_000))
+        val result = plan(PayoffPlanner.plan(debts, listOf(itau, nubank.copy(cancelGoal = true)), 100_000, jan))
+        assertEquals(listOf("nubank", "itau"), result.order)
+        assertEquals(listOf("nubank"), result.goalCards)
+        assertEquals(result.payoffMonthByCard["nubank"], result.goalFreeMonth)
+        assertTrue(result.explanation.contains("Nubank"))
+    }
+
+    @Test
     fun semDividas() {
         val result = plan(PayoffPlanner.plan(emptyList(), listOf(nubank), 30_000, jan))
         assertEquals(null, result.debtFreeMonth)

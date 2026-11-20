@@ -27,6 +27,10 @@ sealed interface PayoffResult {
         val totalPaidCents: Long,
         /** Juros economizados em relação à outra estratégia (só para avalanche). */
         val savingsVsAlternativeCents: Long?,
+        /** Cartões marcados para cancelar (vêm primeiro na ordem). */
+        val goalCards: List<String> = emptyList(),
+        /** Mês em que todos os cartões a cancelar zeram; nulo se não há meta ou dívida neles. */
+        val goalFreeMonth: YearMonth? = null,
     ) : PayoffResult
 
     data class NeverPaysOff(val message: String, val strategy: PayoffStrategy, val order: List<String>) : PayoffResult
@@ -64,7 +68,10 @@ object PayoffPlanner {
         val balanceByCard = active.groupBy { it.cardId }.mapValues { (_, list) -> list.sumOf { it.balanceCents } }
         val allHaveInterest = balanceByCard.keys.all { cardsById[it]?.monthlyInterestBp != null }
         val strategy = if (allHaveInterest) PayoffStrategy.AVALANCHE else PayoffStrategy.BOLA_DE_NEVE
-        val order = order(strategy, balanceByCard, cardsById)
+        // Cartões que o usuário quer cancelar vêm primeiro; dentro de cada grupo vale a estratégia.
+        val goals = balanceByCard.keys.filter { cardsById[it]?.cancelGoal == true }.toSet()
+        val order = order(strategy, balanceByCard.filterKeys { it in goals }, cardsById) +
+            order(strategy, balanceByCard.filterKeys { it !in goals }, cardsById)
 
         val run = simulateRun(active, cardsById, extraMonthlyCents, start, order)
             ?: return PayoffResult.NeverPaysOff(
@@ -80,9 +87,17 @@ object PayoffPlanner {
             null
         }
 
+        val goalNames = order.filter { it in goals }.map { cardsById[it]?.name ?: it }
+        val explanation = if (goalNames.isNotEmpty()) {
+            "Prioridade: ${goalNames.joinToString(" e ")}, que você quer cancelar. Todo o extra vai para ${if (goalNames.size == 1) "ele" else "eles"} primeiro; os outros cartões seguem só com as faturas e parcelas."
+        } else {
+            explain(strategy, order, cardsById, savings)
+        }
         return PayoffResult.Plan(
             strategy = strategy,
-            explanation = explain(strategy, order, cardsById, savings),
+            explanation = explanation,
+            goalCards = order.filter { it in goals },
+            goalFreeMonth = order.filter { it in goals }.mapNotNull { run.payoffMonthByCard[it] }.takeIf { it.size == goals.size && it.isNotEmpty() }?.max(),
             order = order,
             timeline = run.timeline,
             payoffMonthByCard = run.payoffMonthByCard,

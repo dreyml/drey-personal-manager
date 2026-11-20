@@ -36,6 +36,8 @@ data class ForecastInputs(
     val dailySpendByMonth: Map<YearMonth, Long> = emptyMap(),
     val payoffExtraMonthlyCents: Long = 0,
     val wishesMonthlyCents: Long = 0,
+    val variableBills: List<com.nxuslab.dreymanager.domain.model.VariableBill> = emptyList(),
+    val variableActuals: Map<Pair<String, YearMonth>, Long> = emptyMap(),
 )
 
 /**
@@ -85,6 +87,9 @@ object CashForecaster {
                 }
             }
             inputs.fixedBills.filter { it.active }.forEach { events += CashEvent(month.clampDay(it.dayOfMonth), -it.amountCents, it.title) }
+            inputs.variableBills.filter { it.active }.forEach { bill ->
+                events += CashEvent(month.clampDay(bill.dayOfMonth), -(inputs.variableActuals[bill.id to month] ?: bill.estimateCents), bill.title)
+            }
             inputs.debts.forEach { debt -> debtEvent(debt, month, start, cardName)?.let { events += it } }
         }
         inputs.incomes.filter { it.kind == IncomeKind.EXTRA && it.date != null }.forEach { events += CashEvent(it.date!!, it.amountCents, "Renda extra") }

@@ -26,10 +26,26 @@ import com.nxuslab.dreymanager.domain.model.Wish
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import com.nxuslab.dreymanager.data.db.VariableBillEntity
+import com.nxuslab.dreymanager.data.db.VariableBillValueEntity
+import com.nxuslab.dreymanager.domain.model.AccountKind
+import com.nxuslab.dreymanager.domain.model.IncomeKind
+import com.nxuslab.dreymanager.domain.model.PaymentMethod
+import com.nxuslab.dreymanager.domain.model.VariableBill
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
-data class Account(val id: String, val name: String, val balanceCents: Long, val updatedAt: LocalDate)
+data class Account(
+    val id: String,
+    val name: String,
+    /** Saldo informado pelo usuário em [updatedAtMillis]; o saldo atual desconta os lançamentos posteriores. */
+    val balanceCents: Long,
+    val updatedAt: LocalDate,
+    val kind: AccountKind = AccountKind.BANCO,
+    val updatedAtMillis: Long = 0,
+)
 data class Category(val id: String, val name: String, val emoji: String, val color: Long)
 
 data class AppSettings(
@@ -53,8 +69,20 @@ data class FinanceSnapshot(
     val expenses: List<Expense> = emptyList(),
     val wishes: List<Wish> = emptyList(),
     val savedByWish: Map<String, Long> = emptyMap(),
+    val variableBills: List<VariableBill> = emptyList(),
+    val variableActuals: Map<Pair<String, YearMonth>, Long> = emptyMap(),
 ) {
-    val openingBalanceCents: Long get() = accounts.sumOf { it.balanceCents }
+    /**
+     * Saldo atual de uma conta: o valor informado, menos gastos em Pix/débito/dinheiro e mais
+     * rendas extras lançados nela depois do momento em que o saldo foi informado.
+     */
+    fun currentBalance(account: Account): Long {
+        val spent = expenses.filter { it.accountId == account.id && it.method != PaymentMethod.CARTAO && it.createdAt > account.updatedAtMillis }.sumOf { it.amountCents }
+        val received = incomes.filter { it.kind == IncomeKind.EXTRA && it.accountId == account.id && it.createdAt > account.updatedAtMillis }.sumOf { it.amountCents }
+        return account.balanceCents - spent + received
+    }
+
+    val openingBalanceCents: Long get() = accounts.sumOf { currentBalance(it) }
 
     fun budgetInputs(highPriorityWishMonthlyCents: Long = 0) = BudgetInputs(
         settings = settings.budget,
@@ -63,6 +91,8 @@ data class FinanceSnapshot(
         debts = debts,
         expenses = expenses,
         highPriorityWishMonthlyCents = highPriorityWishMonthlyCents,
+        variableBills = variableBills,
+        variableActuals = variableActuals,
     )
 }
 
@@ -84,14 +114,18 @@ class FinanceRepository(private val db: NxusDatabase) {
         db.expenseDao().observeAll(),
         db.wishDao().observeAll(),
         db.wishDao().observeSavings(),
+        db.variableBillDao().observeAll(),
+        db.variableBillDao().observeValues(),
     ) { rows ->
         @Suppress("UNCHECKED_CAST")
         FinanceSnapshot(
             settings = (rows[0] as SettingsEntity?).toDomain(),
             incomes = (rows[1] as List<IncomeEntity>).map { it.toDomain() },
-            accounts = (rows[2] as List<AccountEntity>).map { Account(it.id, it.name, it.balanceCents, it.balanceUpdatedAt) },
+            accounts = (rows[2] as List<AccountEntity>).map { Account(it.id, it.name, it.balanceCents, it.balanceUpdatedAt, it.kind, it.balanceUpdatedAtMillis) },
             fixedBills = (rows[3] as List<FixedBillEntity>).map { FixedBill(it.id, it.title, it.amountCents, it.dayOfMonth, it.categoryId, it.active) },
-            cards = (rows[4] as List<CardEntity>).map { Card(it.id, it.name, it.closingDay, it.dueDay, it.monthlyInterestBp, it.status) },
+            cards = (rows[4] as List<CardEntity>).map { Card(it.id, it.name, it.closingDay, it.dueDay, it.monthlyInterestBp, it.status, it.limitCents, it.cancelGoal) },
+            variableBills = (rows[11] as List<VariableBillEntity>).map { VariableBill(it.id, it.title, it.dayOfMonth, it.estimateCents, it.active) },
+            variableActuals = (rows[12] as List<VariableBillValueEntity>).associate { (it.billId to it.month) to it.amountCents },
             debts = (rows[5] as List<CardDebtEntity>).map { it.toDomain() },
             categories = (rows[6] as List<CategoryEntity>).map { Category(it.id, it.name, it.emoji, it.color) },
             envelopes = (rows[7] as List<EnvelopeEntity>).map { Envelope(it.categoryId, it.monthlyLimitCents) },
@@ -123,10 +157,10 @@ class FinanceRepository(private val db: NxusDatabase) {
         payoffExtraMonthlyCents: Long,
     ): Result<Unit> = safe {
         db.withTransaction {
-            account?.let { db.accountDao().upsert(AccountEntity(it.id, it.name, it.balanceCents, it.updatedAt)) }
-            incomes.forEach { db.incomeDao().upsert(IncomeEntity(it.id, it.kind, it.amountCents, it.dayOfMonth, it.date, account?.id, it.toDebtCents)) }
+            account?.let { db.accountDao().upsert(it.toEntity()) }
+            incomes.forEach { db.incomeDao().upsert(it.copy(accountId = it.accountId ?: account?.id).toEntity()) }
             bills.forEach { db.fixedBillDao().upsert(FixedBillEntity(it.id, it.title, it.amountCents, it.dayOfMonth, it.categoryId, it.active)) }
-            cards.forEach { db.cardDao().upsert(CardEntity(it.id, it.name, it.closingDay, it.dueDay, it.monthlyInterestBp, it.status)) }
+            cards.forEach { db.cardDao().upsert(it.toEntity()) }
             debts.forEach { db.cardDao().upsertDebt(it.toEntity()) }
             envelopes.forEach { db.categoryDao().upsertEnvelope(EnvelopeEntity(it.categoryId, it.monthlyLimitCents)) }
             val current = db.settingsDao().get().toDomain()
@@ -138,13 +172,51 @@ class FinanceRepository(private val db: NxusDatabase) {
 
     // --- Cadastros ---
 
-    suspend fun saveIncome(income: Income, accountId: String? = null): Result<Unit> = safe {
-        db.incomeDao().upsert(IncomeEntity(income.id, income.kind, income.amountCents, income.dayOfMonth, income.date, accountId, income.toDebtCents))
+    suspend fun saveIncome(income: Income): Result<Unit> = safe {
+        db.incomeDao().upsert(income.copy(createdAt = income.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()).toEntity())
     }
     suspend fun deleteIncome(id: String): Result<Unit> = safe { db.incomeDao().delete(id) }
 
+    /** Grava a conta; o saldo informado vale a partir de agora (lançamentos anteriores já estão nele). */
     suspend fun saveAccount(account: Account): Result<Unit> = safe {
-        db.accountDao().upsert(AccountEntity(account.id, account.name, account.balanceCents, account.updatedAt))
+        db.accountDao().upsert(account.copy(updatedAt = LocalDate.now(), updatedAtMillis = System.currentTimeMillis()).toEntity())
+    }
+
+    suspend fun saveVariableBill(bill: VariableBill): Result<Unit> = safe {
+        db.variableBillDao().upsert(VariableBillEntity(bill.id, bill.title, bill.dayOfMonth, bill.estimateCents, bill.active))
+    }
+    suspend fun deleteVariableBill(id: String): Result<Unit> = safe { db.variableBillDao().delete(id) }
+    suspend fun saveVariableValue(billId: String, month: YearMonth, cents: Long): Result<Unit> = safe {
+        db.variableBillDao().upsertValue(VariableBillValueEntity(billId, month, cents))
+    }
+
+    /**
+     * Importação: grava tudo numa transação. Cartão com o mesmo nome de um existente reaproveita o
+     * cadastro e tem as dívidas substituídas; conta com o mesmo nome tem o saldo atualizado.
+     */
+    suspend fun importData(data: ImportBundle): Result<ImportSummary> = safe {
+        db.withTransaction {
+            val existingCards = db.cardDao().observeAll().first().associateBy { it.name.trim().lowercase() }
+            val replaced = mutableListOf<String>()
+            data.cards.forEach { imported ->
+                val existing = existingCards[imported.card.name.trim().lowercase()]
+                val id = existing?.id ?: imported.card.id
+                if (existing != null) {
+                    replaced += existing.name
+                    db.cardDao().deleteDebtsOf(id)
+                }
+                db.cardDao().upsert(imported.card.copy(id = id).toEntity())
+                imported.debts.forEach { db.cardDao().upsertDebt(it.copy(cardId = id).toEntity()) }
+            }
+            val existingAccounts = db.accountDao().observeAll().first().associateBy { it.name.trim().lowercase() }
+            data.accounts.forEach { a ->
+                val id = existingAccounts[a.name.trim().lowercase()]?.id ?: a.id
+                db.accountDao().upsert(a.copy(id = id, updatedAt = LocalDate.now(), updatedAtMillis = System.currentTimeMillis()).toEntity())
+            }
+            data.fixedBills.forEach { db.fixedBillDao().upsert(FixedBillEntity(it.id, it.title, it.amountCents, it.dayOfMonth, it.categoryId, it.active)) }
+            data.variableBills.forEach { db.variableBillDao().upsert(VariableBillEntity(it.id, it.title, it.dayOfMonth, it.estimateCents, it.active)) }
+            ImportSummary(data.cards.size, data.cards.sumOf { it.debts.size }, replaced, data.accounts.size, data.fixedBills.size + data.variableBills.size)
+        }
     }
     suspend fun deleteAccount(id: String): Result<Unit> = safe { db.accountDao().delete(id) }
 
@@ -156,7 +228,7 @@ class FinanceRepository(private val db: NxusDatabase) {
     /** Grava o cartão e substitui suas dívidas numa única transação. */
     suspend fun saveCard(card: Card, debts: List<CardDebt>? = null): Result<Unit> = safe {
         db.withTransaction {
-            db.cardDao().upsert(CardEntity(card.id, card.name, card.closingDay, card.dueDay, card.monthlyInterestBp, card.status))
+            db.cardDao().upsert(card.toEntity())
             debts?.forEach { db.cardDao().upsertDebt(it.toEntity()) }
         }
     }
@@ -179,8 +251,8 @@ class FinanceRepository(private val db: NxusDatabase) {
 
     // --- Gastos e desejos ---
 
-    suspend fun saveExpense(expense: Expense, accountId: String? = null, note: String? = null): Result<Unit> = safe {
-        db.expenseDao().upsert(expense.toEntity(accountId, note))
+    suspend fun saveExpense(expense: Expense, note: String? = null): Result<Unit> = safe {
+        db.expenseDao().upsert(expense.copy(createdAt = expense.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()).toEntity(note))
     }
     suspend fun deleteExpense(id: String): Result<Unit> = safe { db.expenseDao().delete(id) }
 
@@ -244,9 +316,22 @@ private fun AppSettings.toEntity() = SettingsEntity(
     notificationsDenied = notificationsDenied,
 )
 
-private fun IncomeEntity.toDomain() = Income(id, kind, amountCents, dayOfMonth, date, toDebtCents)
+/** O que veio no arquivo de importação. */
+data class ImportedCard(val card: Card, val debts: List<CardDebt>)
+data class ImportBundle(
+    val cards: List<ImportedCard> = emptyList(),
+    val accounts: List<Account> = emptyList(),
+    val fixedBills: List<FixedBill> = emptyList(),
+    val variableBills: List<VariableBill> = emptyList(),
+)
+data class ImportSummary(val cards: Int, val debts: Int, val replacedCards: List<String>, val accounts: Int, val bills: Int)
+
+private fun IncomeEntity.toDomain() = Income(id, kind, amountCents, dayOfMonth, date, toDebtCents, accountId, createdAt)
+private fun Income.toEntity() = IncomeEntity(id, kind, amountCents, dayOfMonth, date, accountId, toDebtCents, createdAt)
+private fun Account.toEntity() = AccountEntity(id, name, balanceCents, updatedAt, kind, updatedAtMillis)
+private fun Card.toEntity() = CardEntity(id, name, closingDay, dueDay, monthlyInterestBp, status, limitCents, cancelGoal)
 private fun CardDebtEntity.toDomain() = CardDebt(id, cardId, kind, description, amountCents, remainingInstallments, nextDueDate)
 private fun CardDebt.toEntity() = CardDebtEntity(id, cardId, kind, description, amountCents, remainingInstallments, nextDueDate)
-private fun ExpenseEntity.toDomain() = Expense(id, amountCents, categoryId, date, method, cardId, reservedForInvoice)
-private fun Expense.toEntity(accountId: String?, note: String?) =
-    ExpenseEntity(id, amountCents, categoryId, date, method, accountId, cardId, reservedForInvoice, note)
+private fun ExpenseEntity.toDomain() = Expense(id, amountCents, categoryId, date, method, cardId, reservedForInvoice, accountId, createdAt)
+private fun Expense.toEntity(note: String?) =
+    ExpenseEntity(id, amountCents, categoryId, date, method, accountId, cardId, reservedForInvoice, note, createdAt)

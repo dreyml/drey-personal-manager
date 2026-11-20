@@ -81,6 +81,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.room:room-runtime:2.8.5")
     implementation("androidx.room:room-ktx:2.8.5")
+    // room-testing (testes de migração) precisa da 1.8; a navegação sozinha fixaria a 1.7.3.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
     ksp("androidx.room:room-compiler:2.8.5")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("androidx.biometric:biometric:1.1.0")

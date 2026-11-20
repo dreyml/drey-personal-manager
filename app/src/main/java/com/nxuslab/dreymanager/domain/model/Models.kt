@@ -11,6 +11,9 @@ import java.time.YearMonth
 
 enum class IncomeKind { FIXA, EXTRA }
 
+/** Banco (Pix/débito) ou carteira (dinheiro físico). */
+enum class AccountKind { BANCO, DINHEIRO }
+
 data class Income(
     val id: String,
     val kind: IncomeKind,
@@ -21,6 +24,22 @@ data class Income(
     val date: LocalDate? = null,
     /** Parte de uma renda extra destinada à quitação do cartão. */
     val toDebtCents: Long = 0,
+    /** Conta onde a renda extra entrou (soma no saldo dela). */
+    val accountId: String? = null,
+    /** Momento do lançamento (ms), para saber se já entrou no saldo informado. */
+    val createdAt: Long = 0,
+)
+
+/**
+ * Conta que se repete todo mês sem valor fixo (energia, celular…). O orçamento usa o valor real
+ * do mês quando lançado e, antes disso, a estimativa.
+ */
+data class VariableBill(
+    val id: String,
+    val title: String,
+    val dayOfMonth: Int,
+    val estimateCents: Long,
+    val active: Boolean = true,
 )
 
 data class FixedBill(
@@ -42,6 +61,10 @@ data class Card(
     /** Juros ao mês em pontos-base (1290 = 12,90% a.m.). Nulo quando o usuário não sabe. */
     val monthlyInterestBp: Int? = null,
     val status: CardStatus = CardStatus.ATIVO,
+    /** Limite de crédito do cartão; nulo quando não informado. */
+    val limitCents: Long? = null,
+    /** Cartão que o usuário quer quitar e cancelar: o plano foca nele primeiro. */
+    val cancelGoal: Boolean = false,
 )
 
 /**
@@ -83,6 +106,10 @@ data class Expense(
     val cardId: String? = null,
     /** Mês de vencimento da fatura em que uma compra no cartão foi reservada. */
     val reservedForInvoice: YearMonth? = null,
+    /** Conta de onde saiu (Pix/débito: banco; dinheiro: carteira). */
+    val accountId: String? = null,
+    /** Momento do lançamento (ms), para saber se já entrou no saldo informado. */
+    val createdAt: Long = 0,
 )
 
 enum class WishPriority { ALTA, MEDIA, BAIXA }
@@ -115,7 +142,13 @@ data class BudgetInputs(
     val expenses: List<Expense> = emptyList(),
     /** Valor mensal reservado para desejos de prioridade alta (calculado pelo WishPlanner). */
     val highPriorityWishMonthlyCents: Long = 0,
-)
+    val variableBills: List<VariableBill> = emptyList(),
+    /** Valores reais lançados: (id da conta variável, mês) → centavos. */
+    val variableActuals: Map<Pair<String, YearMonth>, Long> = emptyMap(),
+) {
+    /** Valor de uma conta variável no mês: o real lançado ou, sem ele, a estimativa. */
+    fun variableAmount(bill: VariableBill, month: YearMonth): Long = variableActuals[bill.id to month] ?: bill.estimateCents
+}
 
 /** Ajusta um dia do mês (ex.: 31) para o último dia válido daquele mês. */
 fun YearMonth.clampDay(day: Int): LocalDate = atDay(day.coerceIn(1, lengthOfMonth()))

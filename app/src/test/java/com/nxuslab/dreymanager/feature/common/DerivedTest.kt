@@ -74,6 +74,43 @@ class DerivedTest {
     }
 
     @Test
+    fun livreDeVerdadeLimitadoPeloDinheiroAteOSalario() {
+        // Conta com R$ 11,45, internet de R$ 99,90 amanhã e salário no dia 15: sobra negativa até lá.
+        val acc = com.nxuslab.dreymanager.data.repo.Account("c", "Conta", 1_145, LocalDate.of(2027, 1, 12), updatedAtMillis = 10)
+        val data = snapshot.copy(accounts = listOf(acc))
+        val week = data.week(today) as WeekBudget.Ready
+        val free = data.realFree(today, week)
+        assertTrue(free.limitedByCash)
+        assertEquals(1_145L - 9_990, free.cashUntilPaydayCents)
+        assertEquals(free.cashUntilPaydayCents, free.freeCents)
+        assertEquals(LocalDate.of(2027, 1, 15), free.nextPayday)
+    }
+
+    @Test
+    fun saldoAntigoDepoisDoSalarioPedeConferencia() {
+        // Saldo informado em 02/01, salário caiu em 05/01 (dia 5): não dá para confiar no saldo.
+        val acc = com.nxuslab.dreymanager.data.repo.Account("c", "Conta", 1_145, LocalDate.of(2027, 1, 2))
+        val data = snapshot.copy(incomes = listOf(Income("s", IncomeKind.FIXA, 400_000, dayOfMonth = 5)), accounts = listOf(acc))
+        val free = data.realFree(today, data.week(today) as WeekBudget.Ready)
+        assertTrue(free.staleBalances)
+        assertTrue(!free.limitedByCash)
+    }
+
+    @Test
+    fun gastoNoPixDescontaDaContaDepoisDoSaldoInformado() {
+        val acc = com.nxuslab.dreymanager.data.repo.Account("c", "Conta", 10_000, today, updatedAtMillis = 1_000)
+        val data = snapshot.copy(
+            accounts = listOf(acc),
+            expenses = listOf(
+                Expense("antes", 500, "x", today, PaymentMethod.PIX, accountId = "c", createdAt = 900), // já estava no saldo
+                Expense("depois", 2_000, "x", today, PaymentMethod.PIX, accountId = "c", createdAt = 1_100),
+                Expense("cartao", 3_000, "x", today, PaymentMethod.CARTAO, accountId = "c", createdAt = 1_200), // cartão não sai da conta
+            ),
+        )
+        assertEquals(8_000L, data.accountBalances().single().currentCents)
+    }
+
+    @Test
     fun semRendaNaoHaSobraParaDesejos() {
         assertEquals(0L, snapshot.copy(incomes = emptyList()).monthlyLeftoverCents(today))
     }

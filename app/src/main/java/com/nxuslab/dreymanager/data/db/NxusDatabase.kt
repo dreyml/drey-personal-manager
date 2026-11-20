@@ -9,6 +9,8 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.YearMonth
@@ -57,6 +59,7 @@ interface CardDao {
     @Query("SELECT * FROM card_debt WHERE cardId = :cardId ORDER BY nextDueDate") fun observeDebtsOf(cardId: String): Flow<List<CardDebtEntity>>
     @Upsert suspend fun upsertDebt(debt: CardDebtEntity)
     @Query("DELETE FROM card_debt WHERE id = :id") suspend fun deleteDebt(id: String)
+    @Query("DELETE FROM card_debt WHERE cardId = :cardId") suspend fun deleteDebtsOf(cardId: String)
 }
 
 @Dao
@@ -90,13 +93,41 @@ interface WishDao {
     @Upsert suspend fun upsertSaving(saving: WishSavingEntity)
 }
 
+@Dao
+interface VariableBillDao {
+    @Query("SELECT * FROM variable_bill ORDER BY dayOfMonth") fun observeAll(): Flow<List<VariableBillEntity>>
+    @Upsert suspend fun upsert(bill: VariableBillEntity)
+    @Query("DELETE FROM variable_bill WHERE id = :id") suspend fun delete(id: String)
+    @Query("SELECT * FROM variable_bill_value") fun observeValues(): Flow<List<VariableBillValueEntity>>
+    @Upsert suspend fun upsertValue(value: VariableBillValueEntity)
+}
+
+/**
+ * v1 → v2 (2.0.1): carteira/banco e momento do saldo nas contas, limite e meta de cancelamento
+ * nos cartões, momento do lançamento em gastos e rendas, e as contas variáveis. Só adiciona:
+ * nenhum dado existente é apagado.
+ */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `account` ADD COLUMN `kind` TEXT NOT NULL DEFAULT 'BANCO'")
+        db.execSQL("ALTER TABLE `account` ADD COLUMN `balanceUpdatedAtMillis` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `card` ADD COLUMN `limitCents` INTEGER")
+        db.execSQL("ALTER TABLE `card` ADD COLUMN `cancelGoal` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `expense` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `income` ADD COLUMN `createdAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `variable_bill` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `dayOfMonth` INTEGER NOT NULL, `estimateCents` INTEGER NOT NULL, `active` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `variable_bill_value` (`billId` TEXT NOT NULL, `month` TEXT NOT NULL, `amountCents` INTEGER NOT NULL, PRIMARY KEY(`billId`, `month`), FOREIGN KEY(`billId`) REFERENCES `variable_bill`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )")
+    }
+}
+
 @Database(
     entities = [
         SettingsEntity::class, IncomeEntity::class, AccountEntity::class, FixedBillEntity::class,
         CardEntity::class, CardDebtEntity::class, CategoryEntity::class, EnvelopeEntity::class,
         ExpenseEntity::class, WishEntity::class, WishSavingEntity::class,
+        VariableBillEntity::class, VariableBillValueEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -109,6 +140,7 @@ abstract class NxusDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun expenseDao(): ExpenseDao
     abstract fun wishDao(): WishDao
+    abstract fun variableBillDao(): VariableBillDao
 
     companion object {
         const val NAME = "nxuslife.db"
@@ -116,7 +148,10 @@ abstract class NxusDatabase : RoomDatabase() {
         @Volatile private var instance: NxusDatabase? = null
 
         fun get(context: Context): NxusDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, NxusDatabase::class.java, NAME).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, NxusDatabase::class.java, NAME)
+                .addMigrations(MIGRATION_1_2)
+                .build()
+                .also { instance = it }
         }
     }
 }

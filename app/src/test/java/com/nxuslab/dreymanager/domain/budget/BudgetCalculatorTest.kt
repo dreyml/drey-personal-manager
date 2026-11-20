@@ -158,6 +158,16 @@ class BudgetCalculatorTest {
     }
 
     @Test
+    fun contaVariavelUsaValorRealOuEstimativa() {
+        val energia = com.nxuslab.dreymanager.domain.model.VariableBill("e", "Energia", 15, estimateCents = 20_000)
+        val withEstimate = base.copy(variableBills = listOf(energia))
+        assertEquals(120_000, BudgetCalculator.monthPlan(jan, withEstimate).fixedBillsCents)
+        val withActual = withEstimate.copy(variableActuals = mapOf(("e" to jan) to 18_350L))
+        assertEquals(118_350, BudgetCalculator.monthPlan(jan, withActual).fixedBillsCents)
+        assertEquals(120_000, BudgetCalculator.monthPlan(jan.plusMonths(1), withActual).fixedBillsCents) // fevereiro volta à estimativa
+    }
+
+    @Test
     fun mesNegativoNaoGeraLimiteNegativo() {
         val poor = base.copy(incomes = listOf(salary.copy(amountCents = 50_000)))
         val week = BudgetCalculator.week(LocalDate.of(2027, 1, 13), poor) as WeekBudget.Ready

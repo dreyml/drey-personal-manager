@@ -105,6 +105,15 @@ class CashForecasterTest {
     }
 
     @Test
+    fun contaVariavelSaiNoDiaComValorRealOuEstimado() {
+        val energia = com.nxuslab.dreymanager.domain.model.VariableBill("e", "Energia", 20, estimateCents = 20_000)
+        val inputs = healthy.copy(variableBills = listOf(energia), variableActuals = mapOf(("e" to YearMonth.of(2027, 1)) to 17_500L))
+        val events = CashForecaster.events(start, 60, inputs).filter { it.reason == "Energia" }
+        assertEquals(listOf(-17_500L, -20_000L), events.map { it.amountCents })
+        assertEquals(LocalDate.of(2027, 1, 20), events.first().date)
+    }
+
+    @Test
     fun quitacaoEDesejosSaemNoDiaDoSalario() {
         val events = CashForecaster.events(start, 31, healthy.copy(payoffExtraMonthlyCents = 30_000, wishesMonthlyCents = 10_000))
         assertTrue(events.any { it.date == LocalDate.of(2027, 1, 5) && it.amountCents == -30_000L && it.reason == "Quitação do cartão" })

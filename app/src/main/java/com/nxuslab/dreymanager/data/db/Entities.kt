@@ -1,6 +1,8 @@
 package com.nxuslab.dreymanager.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import com.nxuslab.dreymanager.domain.model.AccountKind
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -44,6 +46,7 @@ data class IncomeEntity(
     val date: LocalDate? = null,
     val accountId: String? = null,
     val toDebtCents: Long = 0,
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0,
 )
 
 @Entity(tableName = "account")
@@ -52,6 +55,30 @@ data class AccountEntity(
     val name: String,
     val balanceCents: Long,
     val balanceUpdatedAt: LocalDate,
+    @ColumnInfo(defaultValue = "BANCO") val kind: AccountKind = AccountKind.BANCO,
+    /** Momento exato em que o saldo foi informado; lançamentos depois dele ajustam o saldo. */
+    @ColumnInfo(defaultValue = "0") val balanceUpdatedAtMillis: Long = 0,
+)
+
+@Entity(tableName = "variable_bill")
+data class VariableBillEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val dayOfMonth: Int,
+    val estimateCents: Long,
+    val active: Boolean = true,
+)
+
+/** Valor real de uma conta variável num mês (ex.: energia de 2026-11). */
+@Entity(
+    tableName = "variable_bill_value",
+    primaryKeys = ["billId", "month"],
+    foreignKeys = [ForeignKey(entity = VariableBillEntity::class, parentColumns = ["id"], childColumns = ["billId"], onDelete = ForeignKey.CASCADE)],
+)
+data class VariableBillValueEntity(
+    val billId: String,
+    val month: YearMonth,
+    val amountCents: Long,
 )
 
 @Entity(tableName = "fixed_bill")
@@ -72,6 +99,8 @@ data class CardEntity(
     val dueDay: Int,
     val monthlyInterestBp: Int? = null,
     val status: CardStatus = CardStatus.ATIVO,
+    val limitCents: Long? = null,
+    @ColumnInfo(defaultValue = "0") val cancelGoal: Boolean = false,
 )
 
 @Entity(
@@ -117,6 +146,7 @@ data class ExpenseEntity(
     val cardId: String? = null,
     val reservedForInvoice: YearMonth? = null,
     val note: String? = null,
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0,
 )
 
 @Entity(tableName = "wish")
