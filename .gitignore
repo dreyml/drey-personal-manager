@@ -11,3 +11,11 @@ work/
 outputs/
 *.jks
 *.keystore
+
+# Mockups locais do brainstorming
+/.superpowers/
+
+# Assinatura do release (nunca commitar)
+/keystore.properties
+*.jks
+*.keystore

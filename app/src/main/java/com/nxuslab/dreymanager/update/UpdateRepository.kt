@@ -39,7 +39,10 @@ class HttpUpdateRepository(
     private fun parseManifest(body: String): UpdateManifest {
         val json = JSONObject(body)
         val downloadUrl = json.getString("downloadUrl")
-        require(URI(downloadUrl).scheme == "https") { "O download deve usar HTTPS" }
+        val downloadUri = URI(downloadUrl)
+        require(downloadUri.scheme == "https") { "O download deve usar HTTPS" }
+        // Um manifesto adulterado não pode mandar o usuário para outro site.
+        require(downloadUri.host == URI(manifestUrl).host) { "O download deve vir do mesmo servidor do manifesto" }
 
         return UpdateManifest(
             versionCode = json.getLong("versionCode"),

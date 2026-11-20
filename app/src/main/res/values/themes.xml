@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Paleta Bordô profundo: fundo do app enquanto o Compose ainda não desenhou nada. -->
     <style name="Theme.DreyManager" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#140A0D</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#080B17</item>
-        <item name="android:navigationBarColor">#12182C</item>
+        <item name="android:statusBarColor">#140A0D</item>
+        <item name="android:navigationBarColor">#22121A</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
-
