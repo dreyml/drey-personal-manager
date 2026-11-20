@@ -85,3 +85,19 @@ fun FinanceSnapshot.upcoming(today: LocalDate, days: Int = 7): List<UpcomingItem
         .map { UpcomingItem(it.date, it.reason, -it.amountCents) }
 
 fun FinanceSnapshot.debtTotalCents(): Long = debts.sumOf { it.balanceCents }
+
+data class DayGroup(val date: LocalDate, val expenses: List<com.nxuslab.dreymanager.domain.model.Expense>) {
+    val totalCents: Long get() = expenses.sumOf { it.amountCents }
+}
+
+/** Gastos da semana que contém [day], agrupados por dia (mais recente primeiro), respeitando o início da semana. */
+fun FinanceSnapshot.weekGroups(day: LocalDate): Pair<LocalDate, List<DayGroup>> {
+    val start = BudgetCalculator.weekStartOf(day, settings.budget.weekStart)
+    val end = start.plusDays(6)
+    val groups = expenses
+        .filter { !it.date.isBefore(start) && !it.date.isAfter(end) }
+        .groupBy { it.date }
+        .map { (date, list) -> DayGroup(date, list) }
+        .sortedByDescending { it.date }
+    return start to groups
+}

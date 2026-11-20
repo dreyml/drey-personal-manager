@@ -53,6 +53,27 @@ class DerivedTest {
     }
 
     @Test
+    fun gastosDaSemanaAgrupadosPorDia() {
+        val withExpenses = snapshot.copy(
+            expenses = listOf(
+                Expense("a", 1_000, "delivery", LocalDate.of(2027, 1, 11), PaymentMethod.PIX), // segunda
+                Expense("b", 2_000, "delivery", LocalDate.of(2027, 1, 13), PaymentMethod.PIX),
+                Expense("c", 3_000, "delivery", LocalDate.of(2027, 1, 13), PaymentMethod.CARTAO),
+                Expense("d", 4_000, "delivery", LocalDate.of(2027, 1, 10), PaymentMethod.PIX), // domingo anterior
+            ),
+        )
+        val (start, groups) = withExpenses.weekGroups(today)
+        assertEquals(LocalDate.of(2027, 1, 11), start)
+        assertEquals(listOf(LocalDate.of(2027, 1, 13), LocalDate.of(2027, 1, 11)), groups.map { it.date })
+        assertEquals(5_000L, groups.first().totalCents)
+
+        // Semana começando no domingo inclui o dia 10.
+        val sunday = withExpenses.copy(settings = withExpenses.settings.copy(budget = withExpenses.settings.budget.copy(weekStart = java.time.DayOfWeek.SUNDAY)))
+        assertEquals(LocalDate.of(2027, 1, 10), sunday.weekGroups(today).first)
+        assertEquals(3, sunday.weekGroups(today).second.size)
+    }
+
+    @Test
     fun semRendaNaoHaSobraParaDesejos() {
         assertEquals(0L, snapshot.copy(incomes = emptyList()).monthlyLeftoverCents(today))
     }

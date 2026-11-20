@@ -76,6 +76,7 @@ import com.nxuslab.dreymanager.core.ui.AlertCard
 import com.nxuslab.dreymanager.core.ui.AlertKind
 import com.nxuslab.dreymanager.data.LegacyWipe
 import com.nxuslab.dreymanager.feature.gasto.AddExpenseSheet
+import com.nxuslab.dreymanager.feature.gastos.WeekScreen
 import com.nxuslab.dreymanager.feature.home.HomeScreen
 import com.nxuslab.dreymanager.feature.onboarding.OnboardingScreen
 import androidx.compose.material3.SnackbarHost
@@ -202,7 +203,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
                 )
             }
             composable(Routes.GASTOS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.GASTOS })) {
-                Placeholder("Gastos", "Seus gastos da semana, dia a dia.")
+                WeekScreen(onMessage = { scope.launch { snackbar.showSnackbar(it) } })
             }
             composable(Routes.PLANO, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.PLANO })) {
                 Placeholder("Plano", "Saída do cartão, previsão e desejos.")
