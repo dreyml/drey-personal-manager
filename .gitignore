@@ -11,3 +11,6 @@ work/
 outputs/
 *.jks
 *.keystore
+
+# Mockups locais do brainstorming
+/.superpowers/
