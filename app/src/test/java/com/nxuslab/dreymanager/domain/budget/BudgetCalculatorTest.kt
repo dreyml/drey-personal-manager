@@ -147,6 +147,17 @@ class BudgetCalculatorTest {
     }
 
     @Test
+    fun sugestaoDeExtraDeQuitacaoE30PorCentoDaSobraEmDezenas() {
+        // Janeiro: 400.000 − 100.000 − 80.000 = 220.000 de sobra; 30% = 66.000 (já múltiplo de R$ 10).
+        assertEquals(66_000L, BudgetCalculator.suggestPayoffExtra(jan, base))
+        // Sobra de 220.330 → 30% = 66.099 → arredonda para baixo: 66.000.
+        val odd = base.copy(incomes = listOf(salary.copy(amountCents = 400_330)))
+        assertEquals(66_000L, BudgetCalculator.suggestPayoffExtra(jan, odd))
+        // Mês sem sobra não sugere nada.
+        assertEquals(0L, BudgetCalculator.suggestPayoffExtra(jan, base.copy(incomes = listOf(salary.copy(amountCents = 100_000)))))
+    }
+
+    @Test
     fun mesNegativoNaoGeraLimiteNegativo() {
         val poor = base.copy(incomes = listOf(salary.copy(amountCents = 50_000)))
         val week = BudgetCalculator.week(LocalDate.of(2027, 1, 13), poor) as WeekBudget.Ready

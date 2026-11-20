@@ -111,6 +111,12 @@ class PayoffPlannerTest {
     }
 
     @Test
+    fun umCartaoSoNaoFalaEmOrdemDeJuros() {
+        val result = plan(PayoffPlanner.plan(listOf(rotativo("n", "nubank", 100_000)), listOf(nubank), 30_000, jan))
+        assertTrue(result.explanation, result.explanation.startsWith("Todo o extra vai para o Nubank"))
+    }
+
+    @Test
     fun semDividas() {
         val result = plan(PayoffPlanner.plan(emptyList(), listOf(nubank), 30_000, jan))
         assertEquals(null, result.debtFreeMonth)

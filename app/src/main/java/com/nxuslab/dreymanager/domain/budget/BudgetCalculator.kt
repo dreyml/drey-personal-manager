@@ -144,6 +144,16 @@ object BudgetCalculator {
         return if (cents <= suggested) OverrideCheck.Ok else OverrideCheck.TooHigh(suggested)
     }
 
+    /**
+     * Extra de quitação sugerido na configuração inicial (especificação §6.2, item 3): 30% do que
+     * sobra depois das contas fixas e das obrigações do cartão, arredondado para baixo a R$ 10.
+     */
+    fun suggestPayoffExtra(month: YearMonth, inputs: BudgetInputs): Long {
+        val plan = monthPlan(month, inputs.copy(settings = inputs.settings.copy(payoffExtraMonthlyCents = 0, reserveCents = 0), highPriorityWishMonthlyCents = 0))
+        val leftover = (plan.incomeCents - plan.fixedBillsCents - plan.cardObligationsCents).coerceAtLeast(0)
+        return leftover * 30 / 100 / 1_000 * 1_000
+    }
+
     /** Divide uma renda extra: (para a quitação, para a semana). O arredondamento favorece a semana. */
     fun splitExtra(amountCents: Long, percentToDebt: Int): Pair<Long, Long> {
         val toDebt = amountCents * percentToDebt.coerceIn(0, 100) / 100

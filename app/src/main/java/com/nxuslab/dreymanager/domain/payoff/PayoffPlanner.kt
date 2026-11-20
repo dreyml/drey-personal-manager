@@ -116,6 +116,10 @@ object PayoffPlanner {
     private fun explain(strategy: PayoffStrategy, order: List<String>, cardsById: Map<String, Card>, savings: Long?): String {
         val first = cardsById[order.first()]
         val name = first?.name ?: order.first()
+        if (order.size == 1) {
+            val economy = if (savings != null && savings > 0) " Economia estimada de ${Money.format(savings)} em juros." else ""
+            return "Todo o extra vai para o $name até ele zerar; depois é só cancelar.$economy"
+        }
         return when (strategy) {
             PayoffStrategy.AVALANCHE -> {
                 val rate = first?.monthlyInterestBp?.let { "%d,%02d%% a.m.".format(it / 100, it % 100) } ?: ""

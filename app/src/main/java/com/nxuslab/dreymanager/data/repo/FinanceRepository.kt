@@ -109,6 +109,33 @@ class FinanceRepository(private val db: NxusDatabase) {
         db.settingsDao().upsert(change(settings()).toEntity())
     }
 
+    /**
+     * Grava tudo o que a configuração inicial coletou numa única transação: ou entra tudo, ou nada.
+     * Também marca a configuração como concluída e define o extra de quitação.
+     */
+    suspend fun completeOnboarding(
+        account: Account?,
+        incomes: List<Income>,
+        bills: List<FixedBill>,
+        cards: List<Card>,
+        debts: List<CardDebt>,
+        envelopes: List<Envelope>,
+        payoffExtraMonthlyCents: Long,
+    ): Result<Unit> = safe {
+        db.withTransaction {
+            account?.let { db.accountDao().upsert(AccountEntity(it.id, it.name, it.balanceCents, it.updatedAt)) }
+            incomes.forEach { db.incomeDao().upsert(IncomeEntity(it.id, it.kind, it.amountCents, it.dayOfMonth, it.date, account?.id, it.toDebtCents)) }
+            bills.forEach { db.fixedBillDao().upsert(FixedBillEntity(it.id, it.title, it.amountCents, it.dayOfMonth, it.categoryId, it.active)) }
+            cards.forEach { db.cardDao().upsert(CardEntity(it.id, it.name, it.closingDay, it.dueDay, it.monthlyInterestBp, it.status)) }
+            debts.forEach { db.cardDao().upsertDebt(it.toEntity()) }
+            envelopes.forEach { db.categoryDao().upsertEnvelope(EnvelopeEntity(it.categoryId, it.monthlyLimitCents)) }
+            val current = db.settingsDao().get().toDomain()
+            db.settingsDao().upsert(
+                current.copy(onboardingDone = true, budget = current.budget.copy(payoffExtraMonthlyCents = payoffExtraMonthlyCents)).toEntity(),
+            )
+        }
+    }
+
     // --- Cadastros ---
 
     suspend fun saveIncome(income: Income, accountId: String? = null): Result<Unit> = safe {

@@ -75,6 +75,7 @@ import com.nxuslab.dreymanager.core.theme.NxusColors
 import com.nxuslab.dreymanager.core.ui.AlertCard
 import com.nxuslab.dreymanager.core.ui.AlertKind
 import com.nxuslab.dreymanager.data.LegacyWipe
+import com.nxuslab.dreymanager.feature.onboarding.OnboardingScreen
 import com.nxuslab.dreymanager.update.HttpUpdateRepository
 import com.nxuslab.dreymanager.update.UpdateChecker
 import com.nxuslab.dreymanager.update.UpdateState
@@ -179,11 +180,10 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
             modifier = Modifier.padding(padding),
         ) {
             composable(Routes.ONBOARDING) {
-                Placeholder("Configuração inicial", "Renda, contas fixas, cartões e envelopes. Chega na próxima etapa.") {
-                    TextButton(onClick = { navController.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) {
-                        Text("Ir para o início por enquanto")
-                    }
-                }
+                OnboardingScreen(onFinished = {
+                    onOnboardingFinished()
+                    navController.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
+                })
             }
             composable(Routes.HOME, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.HOME })) {
                 Placeholder("Início", "Quanto ainda posso gastar esta semana.")
