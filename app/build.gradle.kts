@@ -17,8 +17,9 @@ android {
         applicationId = "com.nxuslab.dreymanager"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.9.1"
+        // A 0.9.4 publicada no servidor usa versionCode 13; a 2.0 precisa ser maior.
+        versionCode = 14
+        versionName = "2.0.0"
         buildConfigField(
             "String",
             "UPDATE_MANIFEST_URL",
@@ -30,7 +31,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -69,7 +71,12 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    implementation("androidx.navigation:navigation-compose:2.9.0")
+
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("androidx.room:room-testing:2.8.5")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
