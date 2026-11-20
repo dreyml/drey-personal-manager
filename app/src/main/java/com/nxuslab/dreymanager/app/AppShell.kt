@@ -78,6 +78,12 @@ import com.nxuslab.dreymanager.data.LegacyWipe
 import com.nxuslab.dreymanager.feature.gasto.AddExpenseSheet
 import com.nxuslab.dreymanager.feature.gastos.WeekScreen
 import com.nxuslab.dreymanager.feature.plano.PlanoScreen
+import com.nxuslab.dreymanager.notifications.Notifier
+import com.nxuslab.dreymanager.notifications.Reminders
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.nxuslab.dreymanager.feature.plano.PlanoTab
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
@@ -115,7 +121,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val wipe = LegacyWipe.runOnce(application, repository)
             val seed = repository.seedCategoriesIfEmpty()
             val error = (wipe.exceptionOrNull() ?: seed.exceptionOrNull())?.let { "Não foi possível preparar o app: ${it.message}" }
-            _state.update { it.copy(ready = true, onboardingDone = repository.settings().onboardingDone, startupError = error) }
+            val settings = repository.settings()
+            _state.update { it.copy(ready = true, onboardingDone = settings.onboardingDone, startupError = error) }
+            Notifier.createChannels(application)
+            Reminders.schedule(application, settings.reminderMinutes, replace = false)
         }
         viewModelScope.launch {
             val checker = UpdateChecker(HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL), BuildConfig.VERSION_CODE.toLong())
@@ -125,6 +134,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onboardingFinished() = _state.update { it.copy(onboardingDone = true) }
+
+    /** Recusa da permissão fica registrada para o aviso em Mais. */
+    fun notificationPermissionResult(granted: Boolean) {
+        viewModelScope.launch { repository.updateSettings { it.copy(notificationsDenied = !granted) } }
+    }
 }
 
 // ---------- Rotas ----------
@@ -156,15 +170,22 @@ fun AppShell(viewModel: AppViewModel = viewModel()) {
         if (!state.ready) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            NxusNavHost(state, onOnboardingFinished = viewModel::onboardingFinished)
+            NxusNavHost(state, onOnboardingFinished = viewModel::onboardingFinished, onPermissionResult = viewModel::notificationPermissionResult)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
+private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPermissionResult: (Boolean) -> Unit) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission(), onPermissionResult)
+    fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val current by navController.currentBackStackEntryAsState()
     val route = current?.destination?.route
     var addExpenseOpen by rememberSaveable { mutableStateOf(false) }
@@ -196,6 +217,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit) {
             composable(Routes.ONBOARDING) {
                 OnboardingScreen(onFinished = {
                     onOnboardingFinished()
+                    askNotificationPermission()
                     navController.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
                 })
             }
