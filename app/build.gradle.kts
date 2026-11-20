@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -33,7 +35,7 @@ android {
     // o release sai sem assinatura e precisa ser assinado à parte.
     val keystoreFile = rootProject.file("keystore.properties")
     if (keystoreFile.exists()) {
-        val keystore = java.util.Properties().apply { keystoreFile.inputStream().use { load(it) } }
+        val keystore = Properties().apply { keystoreFile.inputStream().use { load(it) } }
         signingConfigs {
             create("release") {
                 storeFile = rootProject.file(keystore.getProperty("storeFile"))
