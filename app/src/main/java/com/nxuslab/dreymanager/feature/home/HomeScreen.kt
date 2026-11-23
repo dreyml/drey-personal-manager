@@ -1,5 +1,8 @@
 package com.nxuslab.dreymanager.feature.home
 
+import com.nxuslab.dreymanager.data.sync.BankSync
+import com.nxuslab.dreymanager.feature.mais.syncedLabel
+import androidx.compose.ui.platform.LocalContext
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -126,6 +129,8 @@ fun HomeScreen(onOpenPlan: () -> Unit, onOpenForecast: () -> Unit, onOpenMore: (
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
+    val context = LocalContext.current
+    val bankStatus by BankSync.status.collectAsStateWithLifecycle()
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 96.dp),
@@ -180,6 +185,17 @@ fun HomeScreen(onOpenPlan: () -> Unit, onOpenForecast: () -> Unit, onOpenMore: (
                         editing = Account(UUID.randomUUID().toString(), "Carteira", 0, LocalDate.now(), AccountKind.DINHEIRO)
                     }
                 }
+            }
+        }
+
+        if (bankStatus.configured) {
+            item {
+                Text(
+                    if (bankStatus.running) "🔄 Sincronizando com os bancos…" else "🔄 ${syncedLabel(bankStatus)} · toque para atualizar",
+                    color = if (bankStatus.lastFailed) NxusColors.Alert else NxusColors.TextMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.clickable(enabled = !bankStatus.running) { BankSync.requestNow(context) },
+                )
             }
         }
 

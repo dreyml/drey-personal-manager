@@ -11,10 +11,16 @@ import com.nxuslab.dreymanager.app.AppShell
 import com.nxuslab.dreymanager.core.theme.NxusTheme
 import com.nxuslab.dreymanager.data.db.NxusDatabase
 import com.nxuslab.dreymanager.data.repo.FinanceRepository
+import com.nxuslab.dreymanager.data.sync.BankSync
 
 /** Guarda as dependências do app: um único banco e um único repositório. */
 class NxusApp : Application() {
     val repository: FinanceRepository by lazy { FinanceRepository(NxusDatabase.get(this)) }
+
+    override fun onCreate() {
+        super.onCreate()
+        BankSync.init(this)
+    }
 }
 
 /** FragmentActivity porque o BiometricPrompt precisa dela. */

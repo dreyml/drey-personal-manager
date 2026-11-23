@@ -218,6 +218,17 @@ class FinanceRepository(private val db: NxusDatabase) {
             ImportSummary(data.cards.size, data.cards.sumOf { it.debts.size }, replaced, data.accounts.size, data.fixedBills.size + data.variableBills.size)
         }
     }
+    /** Aplica uma sincronização com os bancos: tudo numa transação (ou entra tudo, ou nada). */
+    suspend fun applyBankSync(plan: com.nxuslab.dreymanager.data.sync.SyncPlan): Result<Unit> = safe {
+        db.withTransaction {
+            plan.accounts.forEach { db.accountDao().upsert(it.toEntity()) }
+            plan.cards.forEach { db.cardDao().upsert(it.toEntity()) }
+            plan.debtDeletes.forEach { db.cardDao().deleteDebt(it) }
+            plan.debtUpserts.forEach { db.cardDao().upsertDebt(it.toEntity()) }
+            plan.expenses.forEach { db.expenseDao().upsert(it.expense.toEntity(it.note)) }
+        }
+    }
+
     suspend fun deleteAccount(id: String): Result<Unit> = safe { db.accountDao().delete(id) }
 
     suspend fun saveFixedBill(bill: FixedBill): Result<Unit> = safe {

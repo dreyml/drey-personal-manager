@@ -87,7 +87,7 @@ internal fun CoroutineScope.save(action: suspend () -> Result<Unit>, onMessage: 
 
 internal enum class Section(val title: String) {
     RENDA("Renda e extras"), CONTAS_FIXAS("Contas fixas"), CONTAS_VARIAVEIS("Contas variáveis"), CONTAS("Contas e carteira"),
-    CATEGORIAS("Categorias e envelopes"), CARTOES("Cartões e dívidas"), AJUSTES("Ajustes"),
+    CATEGORIAS("Categorias e envelopes"), CARTOES("Cartões e dívidas"), BANCOS("Bancos conectados"), AJUSTES("Ajustes"),
 }
 
 @Composable
@@ -106,6 +106,7 @@ fun MoreScreen(update: UpdateState, onMessage: (String) -> Unit, viewModel: More
         Section.CONTAS -> AccountsSection(data, viewModel, onMessage)
         Section.CATEGORIAS -> CategoriesSection(data, viewModel, onMessage)
         Section.CARTOES -> CardsSection(data, viewModel, onMessage)
+        Section.BANCOS -> BankSection(onMessage)
         Section.AJUSTES -> SettingsSection(data, viewModel, onMessage)
     }
 }
@@ -114,6 +115,7 @@ fun MoreScreen(update: UpdateState, onMessage: (String) -> Unit, viewModel: More
 private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -> Unit, onImport: () -> Unit) {
     val context = LocalContext.current
     val notificationsOn = remember { Notifier.enabled(context) }
+    val bankStatus by com.nxuslab.dreymanager.data.sync.BankSync.status.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 16.dp, 20.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { Text("Mais", style = MaterialTheme.typography.headlineMedium) }
         if (!notificationsOn) {
@@ -136,6 +138,7 @@ private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -
             Section.CONTAS to "saldo ${Money.format(data.openingBalanceCents)}",
             Section.CATEGORIAS to "${data.envelopes.size} envelope(s)",
             Section.CARTOES to "${data.cards.size} cartão(ões) · ${Money.format(data.debts.sumOf { it.balanceCents })} em dívidas",
+            Section.BANCOS to bankStatus.let { if (it.configured) syncedLabel(it) else "Open Finance · saldos e gastos sozinhos" },
             Section.AJUSTES to "semana, lembrete, reserva e limite",
         )
         Section.entries.forEach { s ->

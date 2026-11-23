@@ -126,6 +126,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(ready = true, onboardingDone = settings.onboardingDone, startupError = error) }
             Notifier.createChannels(application)
             Reminders.schedule(application, settings.reminderMinutes, replace = false)
+            if (settings.onboardingDone) com.nxuslab.dreymanager.data.sync.BankSync.syncIfStale(application)
         }
         viewModelScope.launch {
             val checker = UpdateChecker(HttpUpdateRepository(BuildConfig.UPDATE_MANIFEST_URL), BuildConfig.VERSION_CODE.toLong())
