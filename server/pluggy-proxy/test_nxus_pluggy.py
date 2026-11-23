@@ -24,8 +24,10 @@ class FakePluggy:
         if self.expire_next:
             self.expire_next = False
             return 401, {}
+        if "/items/gone" in url:
+            return 404, {}
         if "/items/" in url:
-            return 200, {"id": "it1", "connector": {"name": "Nubank"}}
+            return 200, {"id": "it1", "connector": {"name": "Nubank"}, "lastUpdatedAt": "2026-11-23T06:00:00.000Z"}
         if "/accounts" in url:
             return 200, {"results": [
                 {"id": "a1", "type": "BANK", "name": "Conta", "balance": 1217.42},
@@ -79,9 +81,15 @@ class UnitTests(unittest.TestCase):
         self.assertEqual((bank["type"], bank["balanceCents"], bank["institution"]), ("BANK", 121742, "Nubank"))
         self.assertEqual((card["creditLimitCents"], card["availableCreditCents"]), (200000, 134119))
         self.assertEqual((card["billAmountCents"], card["billDueDate"]), (65881, "2026-12-22"))
+        self.assertEqual(bank["updatedAt"], "2026-11-23T06:00:00.000Z")
         self.assertEqual([t["id"] for t in out["transactions"]], ["t1", "t2", "cc1", "cc2"])
         self.assertEqual(out["transactions"][2]["amountCents"], -8990)
         self.assertEqual(out["transactions"][0]["date"], "2026-11-20")
+
+    def test_missing_item_does_not_break_others(self):
+        out = np.build_sync(np.PluggyClient("id", "secret", http=FakePluggy()), ["gone", "it1"], "2026-10-01")
+        self.assertEqual(len(out["accounts"]), 2)
+        self.assertEqual(out["errors"][0]["itemId"], "gone")
 
     def test_api_key_refreshed_on_401(self):
         fake = FakePluggy()

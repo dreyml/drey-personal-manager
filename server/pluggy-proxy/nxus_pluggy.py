@@ -137,9 +137,15 @@ class PluggyClient:
 
 
 def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
-    accounts, transactions = [], []
+    accounts, transactions, errors = [], [], []
     for item_id in item_ids:
-        item = client.get(f"/items/{urllib.parse.quote(item_id)}")
+        try:
+            item = client.get(f"/items/{urllib.parse.quote(item_id)}")
+        except PluggyError as e:
+            # Um banco com problema (conexão removida, expirada…) não derruba os outros.
+            sys.stderr.write(f"pluggy: {e}\n")
+            errors.append({"itemId": item_id, "error": str(e)})
+            continue
         item_accounts = client.get("/accounts", {"itemId": item_id}).get("results", [])
         institution = institution_name((item.get("connector") or {}).get("name"),
                                        [a.get("name") or "" for a in item_accounts])
@@ -152,6 +158,8 @@ def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
                 "id": acc.get("id"),
                 "itemId": item_id,
                 "institution": institution,
+                # Quando a Pluggy buscou os dados no banco (o saldo vale a partir daí).
+                "updatedAt": item.get("lastUpdatedAt") or item.get("updatedAt"),
                 "type": kind,
                 "name": acc.get("marketingName") or acc.get("name"),
                 "balanceCents": to_cents(acc.get("balance")) or 0,
@@ -176,6 +184,7 @@ def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
         "syncedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "accounts": accounts,
         "transactions": transactions,
+        "errors": errors,
     }
 
 
@@ -239,7 +248,10 @@ def make_handler(client: PluggyClient, item_ids: list[str], token: str, limiter:
             except ValueError:
                 return self._send(400, {"error": "from deve ser AAAA-MM-DD"})
             try:
-                return self._send(200, build_sync(client, item_ids, since))
+                result = build_sync(client, item_ids, since)
+                if item_ids and len(result["errors"]) == len(item_ids):
+                    raise PluggyError(result["errors"][0]["error"])
+                return self._send(200, result)
             except PluggyError as e:
                 sys.stderr.write(f"pluggy: {e}\n")
                 return self._send(502, {"error": str(e)})
