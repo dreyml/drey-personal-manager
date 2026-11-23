@@ -33,13 +33,15 @@ class FakePluggy:
                  "creditData": {"creditLimit": 2000, "availableCreditLimit": "1341.19",
                                 "balanceDueDate": "2026-12-22T00:00:00.000Z"}},
             ]}
-        if "/transactions" in url:
-            page = int(url.split("page=")[1].split("&")[0])
+        if "/v2/transactions" in url:
+            assert "dateFrom=" in url or "after=" in url
             if "accountId=a1" in url:
-                tx = {"id": f"t{page}", "date": "2026-11-20T10:00:00Z", "amount": -45.76,
+                page = 2 if "after=" in url else 1
+                tx = {"id": f"t{page}", "date": "2026-11-20T03:00:00.000Z", "amount": -45.76,
                       "type": "DEBIT", "description": "Mercado", "category": "Groceries"}
-                return 200, {"totalPages": 2, "results": [tx]}
-            return 200, {"totalPages": 1, "results": [
+                nxt = None if page == 2 else "?accountId=a1&after=abc%3D%3D"
+                return 200, {"next": nxt, "results": [tx]}
+            return 200, {"next": None, "results": [
                 {"id": "cc1", "date": "2026-11-21", "amount": 89.9, "type": "DEBIT",
                  "description": "Loja"},
                 {"id": "cc2", "date": "2026-11-21", "amount": -10, "type": "CREDIT",
@@ -53,6 +55,18 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(np.to_cents("-45.76"), -4576)
         self.assertEqual(np.to_cents(0.105), 11)  # meio para cima, sem erro de float
         self.assertIsNone(np.to_cents(None))
+
+    def test_institution_from_account_names(self):
+        names = ["Nu Pagamentos S.A. - Instituição de Pagamento (Conta Pré-paga)", "gold"]
+        self.assertEqual(np.institution_name("MeuPluggy", names), "Nubank")
+        self.assertEqual(np.institution_name("MeuPluggy", ["Sicoob"]), "Sicoob")
+        self.assertEqual(np.institution_name("MeuPluggy", ["gold"]), "MeuPluggy")
+
+    def test_day_in_brasilia(self):
+        self.assertEqual(np.iso_day("2026-11-23T03:00:00.000Z"), "2026-11-23")
+        self.assertEqual(np.iso_day("2026-11-23T01:00:00.000Z"), "2026-11-22")
+        self.assertEqual(np.iso_day("2026-12-22"), "2026-12-22")
+        self.assertIsNone(np.iso_day(None))
 
     def test_sign_comes_from_type(self):
         self.assertEqual(np.signed_cents({"amount": 89.9, "type": "DEBIT"}), -8990)

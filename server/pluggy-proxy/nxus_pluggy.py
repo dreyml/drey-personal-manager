@@ -21,8 +21,26 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PLUGGY_BASE = "https://api.pluggy.ai"
 API_KEY_TTL = 100 * 60  # a apiKey vale 2 h; renovamos antes
 RATE_LIMIT = 30  # requisições por minuto por IP
-PAGE_SIZE = 500
-MAX_PAGES = 20
+MAX_PAGES = 40
+
+
+KNOWN_BANKS = (
+    ("nu pagamentos", "Nubank"), ("nubank", "Nubank"), ("sicoob", "Sicoob"),
+    ("mercado pago", "Mercado Pago"), ("mercadopago", "Mercado Pago"), ("inter", "Inter"),
+    ("itau", "Itaú"), ("itaú", "Itaú"), ("bradesco", "Bradesco"), ("santander", "Santander"),
+    ("caixa", "Caixa"), ("banco do brasil", "Banco do Brasil"), ("c6", "C6 Bank"),
+    ("picpay", "PicPay"),
+)
+
+
+def institution_name(connector: str | None, account_names: list[str]) -> str | None:
+    """Pelo Meu Pluggy o conector se chama "MeuPluggy"; o banco real vem do nome das contas."""
+    for name in account_names:
+        lower = (name or "").lower()
+        for key, bank in KNOWN_BANKS:
+            if key in lower:
+                return bank
+    return connector
 
 
 class PluggyError(Exception):
@@ -37,10 +55,21 @@ def to_cents(value) -> int | None:
     return int(cents)
 
 
+BRT = timezone(timedelta(hours=-3))
+
+
 def iso_day(value) -> str | None:
+    """Data da Pluggy (UTC, ex.: 2026-11-23T03:00:00.000Z) para o dia em Brasília."""
     if not value:
         return None
-    return str(value)[:10]
+    text = str(value)
+    if "T" not in text:
+        return text[:10]
+    moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    # Meia-noite UTC = data pura (vencimentos); demais horários são instantes reais.
+    if moment.tzinfo is None or (moment.hour, moment.minute, moment.second) == (0, 0, 0):
+        return text[:10]
+    return moment.astimezone(BRT).date().isoformat()
 
 
 def signed_cents(tx: dict) -> int:
@@ -97,14 +126,13 @@ class PluggyClient:
             return data
         raise PluggyError(f"GET {path} sem autorização")
 
-    def paged(self, path: str, params: dict) -> list:
-        out, page = [], 1
-        while page <= MAX_PAGES:
-            data = self.get(path, {**params, "pageSize": PAGE_SIZE, "page": page})
+    def cursor_pages(self, path: str, params: dict) -> list:
+        """Rotas v2 da Pluggy: cada resposta traz `next` (query string pronta) ou null."""
+        out, query, pages = [], "?" + urllib.parse.urlencode(params), 0
+        while query and pages < MAX_PAGES:
+            data = self.get(path + query)
             out.extend(data.get("results", []))
-            if page >= int(data.get("totalPages") or 1):
-                break
-            page += 1
+            query, pages = data.get("next"), pages + 1
         return out
 
 
@@ -112,8 +140,10 @@ def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
     accounts, transactions = [], []
     for item_id in item_ids:
         item = client.get(f"/items/{urllib.parse.quote(item_id)}")
-        institution = (item.get("connector") or {}).get("name")
-        for acc in client.get("/accounts", {"itemId": item_id}).get("results", []):
+        item_accounts = client.get("/accounts", {"itemId": item_id}).get("results", [])
+        institution = institution_name((item.get("connector") or {}).get("name"),
+                                       [a.get("name") or "" for a in item_accounts])
+        for acc in item_accounts:
             kind = "CREDIT" if acc.get("type") == "CREDIT" else "BANK"
             credit = acc.get("creditData") or {}
             # Saldo do cartão na Pluggy = valor em aberto da fatura atual.
@@ -131,7 +161,7 @@ def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
                 "billDueDate": iso_day(credit.get("balanceDueDate")),
                 "billCloseDate": iso_day(credit.get("balanceCloseDate")),
             })
-            for tx in client.paged("/transactions", {"accountId": acc.get("id"), "from": since}):
+            for tx in client.cursor_pages("/v2/transactions", {"accountId": acc.get("id"), "dateFrom": since}):
                 transactions.append({
                     "id": tx.get("id"),
                     "accountId": acc.get("id"),
@@ -140,6 +170,7 @@ def build_sync(client: PluggyClient, item_ids: list[str], since: str) -> dict:
                     "description": tx.get("description") or "",
                     "category": tx.get("category"),
                     "type": tx.get("type"),
+                    "status": tx.get("status"),
                 })
     return {
         "syncedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
