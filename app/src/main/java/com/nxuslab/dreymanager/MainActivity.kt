@@ -32,10 +32,10 @@ class MainActivity : FragmentActivity() {
         if (!BuildConfig.DEBUG) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
-        // O app é sempre escuro: ícones claros nas barras do sistema, mesmo com o aparelho no tema claro.
+        // O app é sempre claro (pastel): ícones escuros nas barras do sistema, mesmo com o aparelho no tema escuro.
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
         setContent { NxusTheme { AppShell() } }
     }

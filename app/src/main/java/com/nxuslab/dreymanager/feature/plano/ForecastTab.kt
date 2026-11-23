@@ -87,7 +87,7 @@ private fun WhatIfForm(today: LocalDate, onAdd: (CashEvent) -> Unit) {
     var text by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf<Long?>(null) }
     var date by remember { mutableStateOf<LocalDate?>(today) }
-    Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(22.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf(true to "Gasto", false to "Entrada").forEachIndexed { i, (value, label) ->
                 SegmentedButton(selected = isExpense == value, onClick = { isExpense = value }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }

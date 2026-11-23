@@ -168,7 +168,7 @@ private fun CardsTab(data: FinanceSnapshot, viewModel: PlanoViewModel, onMessage
 
         item { SectionHeader("Simulador") }
         item {
-            Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(22.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Extra atual: ${Money.format(currentExtra)} por mês", style = MaterialTheme.typography.titleMedium)
                 Text("E se eu pagar mais ${Money.format(addCents)} por mês?", color = NxusColors.TextMuted)
                 Slider(

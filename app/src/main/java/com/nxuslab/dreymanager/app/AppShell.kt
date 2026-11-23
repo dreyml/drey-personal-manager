@@ -1,5 +1,7 @@
 package com.nxuslab.dreymanager.app
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
@@ -205,8 +207,9 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
                     onClick = { addExpenseOpen = true },
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                     text = { Text("Gasto") },
-                    containerColor = NxusColors.Accent,
+                    containerColor = NxusColors.Text,
                     contentColor = androidx.compose.ui.graphics.Color.White,
+                    shape = RoundedCornerShape(28.dp),
                 )
             }
         },
@@ -274,7 +277,11 @@ private fun NavHostController.navigateTab(route: String) = navigate(route) {
 
 @Composable
 private fun BottomBar(navController: NavHostController, route: String?) {
-    NavigationBar(containerColor = NxusColors.Surface) {
+    NavigationBar(
+        containerColor = NxusColors.Surface,
+        tonalElevation = 0.dp,
+        modifier = Modifier.clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)),
+    ) {
         tabs.forEach { tab ->
             NavigationBarItem(
                 selected = route?.substringBefore('?') == tab.route,
@@ -284,7 +291,7 @@ private fun BottomBar(navController: NavHostController, route: String?) {
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = NxusColors.AccentLight,
                     selectedTextColor = NxusColors.AccentLight,
-                    indicatorColor = NxusColors.SurfaceHigh,
+                    indicatorColor = NxusColors.Lavender,
                     unselectedIconColor = NxusColors.TextMuted,
                     unselectedTextColor = NxusColors.TextMuted,
                 ),
@@ -352,7 +359,7 @@ fun AppLock(content: @Composable () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Image(painterResource(R.drawable.nxuslife_logo), contentDescription = null, modifier = Modifier.size(96.dp))
+        Image(painterResource(R.drawable.nxuslife_mark), contentDescription = null, modifier = Modifier.size(96.dp))
         Spacer(Modifier.height(24.dp))
         Text("NxusLife está bloqueado", style = MaterialTheme.typography.titleLarge)
         error?.let { Text(it, color = NxusColors.Danger, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp)) }

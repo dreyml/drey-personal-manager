@@ -73,7 +73,7 @@ fun BigRing(remainingCents: Long, limitCents: Long, caption: String, footer: Str
             val arcSize = Size(this.size.width - stroke, this.size.height - stroke)
             drawArc(NxusColors.SurfaceHigh, -90f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
             drawArc(
-                color = if (negative) NxusColors.Danger else NxusColors.Accent,
+                color = if (negative) NxusColors.Danger else NxusColors.Ring,
                 startAngle = -90f,
                 sweepAngle = 360f * (1f - used),
                 useCenter = false,
@@ -87,7 +87,7 @@ fun BigRing(remainingCents: Long, limitCents: Long, caption: String, footer: Str
             Text(
                 Money.formatShort(remainingCents),
                 style = MaterialTheme.typography.displayLarge,
-                color = if (negative) NxusColors.Danger else NxusColors.AccentLight,
+                color = if (negative) NxusColors.Danger else NxusColors.Text,
             )
             Text("de ${Money.formatShort(limitCents)}", style = MaterialTheme.typography.bodyMedium, color = NxusColors.TextMuted)
             Spacer(Modifier.height(4.dp))
@@ -166,22 +166,21 @@ enum class AlertKind { INFO, WARNING, DANGER }
 
 @Composable
 fun AlertCard(title: String, message: String, kind: AlertKind, modifier: Modifier = Modifier, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
-    val color = when (kind) {
-        AlertKind.INFO -> NxusColors.AccentLight
-        AlertKind.WARNING -> NxusColors.Alert
-        AlertKind.DANGER -> NxusColors.Danger
+    // Cartão pastel preenchido: lavanda (informação), pêssego (atenção), rosado (perigo).
+    val (fill, color) = when (kind) {
+        AlertKind.INFO -> NxusColors.Lavender to NxusColors.AccentLight
+        AlertKind.WARNING -> NxusColors.Peach to NxusColors.Alert
+        AlertKind.DANGER -> androidx.compose.ui.graphics.Color(0xFFF7D9D7) to NxusColors.Danger
     }
     Row(
         modifier
             .fillMaxWidth()
-            .background(NxusColors.Surface, RoundedCornerShape(16.dp))
-            .padding(16.dp),
+            .background(fill, RoundedCornerShape(22.dp))
+            .padding(horizontal = 18.dp, vertical = 16.dp),
     ) {
-        Box(Modifier.width(4.dp).height(40.dp).background(color, RoundedCornerShape(2.dp)))
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = color)
-            Text(message, style = MaterialTheme.typography.bodyMedium)
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = NxusColors.Text)
             if (actionLabel != null && onAction != null) {
                 TextButton(onClick = onAction, contentPadding = PaddingValues(0.dp)) { Text(actionLabel) }
             }
@@ -192,7 +191,7 @@ fun AlertCard(title: String, message: String, kind: AlertKind, modifier: Modifie
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier, actionLabel: String? = null, onAction: (() -> Unit)? = null) {
     Row(modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text.uppercase(), style = MaterialTheme.typography.labelMedium, color = NxusColors.TextMuted, modifier = Modifier.weight(1f))
+        Text(text, style = MaterialTheme.typography.titleMedium, color = NxusColors.Text, modifier = Modifier.weight(1f))
         if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel) }
     }
 }

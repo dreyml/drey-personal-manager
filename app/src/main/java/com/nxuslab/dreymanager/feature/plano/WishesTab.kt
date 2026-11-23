@@ -102,7 +102,7 @@ fun WishesTab(data: FinanceSnapshot, viewModel: PlanoViewModel, onMessage: (Stri
 private fun WishCard(projection: WishProjection, comparison: String, onSave: () -> Unit, onEdit: () -> Unit, onBought: () -> Unit, onGiveUp: () -> Unit) {
     val wish = projection.wish
     var showCompare by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(22.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row {
             Text(wish.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Text(priorityLabels.first { it.first == wish.priority }.second, color = if (wish.priority == WishPriority.ALTA) NxusColors.AccentLight else NxusColors.TextMuted, style = MaterialTheme.typography.labelLarge)

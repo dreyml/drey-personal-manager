@@ -144,7 +144,7 @@ private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -
         Section.entries.forEach { s ->
             item {
                 Row(
-                    Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(14.dp)).clickable { onOpen(s) }.padding(16.dp),
+                    Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(22.dp)).clickable { onOpen(s) }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -157,7 +157,7 @@ private fun Menu(data: FinanceSnapshot, update: UpdateState, onOpen: (Section) -
         }
         item {
             Row(
-                Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(14.dp)).clickable(onClick = onImport).padding(16.dp),
+                Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(22.dp)).clickable(onClick = onImport).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {

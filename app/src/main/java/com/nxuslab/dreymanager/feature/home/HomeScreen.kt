@@ -1,5 +1,7 @@
 package com.nxuslab.dreymanager.feature.home
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.graphics.Color
 import com.nxuslab.dreymanager.data.sync.BankSync
 import com.nxuslab.dreymanager.feature.mais.syncedLabel
 import androidx.compose.ui.platform.LocalContext
@@ -138,20 +140,24 @@ fun HomeScreen(onOpenPlan: () -> Unit, onOpenForecast: () -> Unit, onOpenMore: (
     ) {
         item {
             Column {
-                Text("NxusLife", style = MaterialTheme.typography.labelMedium, color = NxusColors.AccentLight)
-                Text(greeting(), style = MaterialTheme.typography.headlineMedium)
+                Text(greeting(), style = MaterialTheme.typography.bodyMedium, color = NxusColors.TextMuted)
+                Text(todayLabel(), style = MaterialTheme.typography.headlineMedium)
             }
         }
 
         item {
             when (val week = state.week) {
-                is WeekBudget.Ready -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                is WeekBudget.Ready -> Column(
+                    Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(28.dp)).padding(vertical = 20.dp, horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     val free = state.realFree?.freeCents ?: week.remainingCents
                     BigRing(
                         remainingCents = free,
                         limitCents = week.limitCents,
                         caption = if (free >= 0) "livre esta semana" else "acima do que dá",
                         footer = "${week.daysLeft} ${if (week.daysLeft == 1) "dia" else "dias"} · ~${Money.formatShort(free.coerceAtLeast(0) / week.daysLeft)}/dia",
+                        size = 220.dp,
                     )
                     state.realFree?.takeIf { it.limitedByCash }?.let { rf ->
                         Text(
@@ -176,26 +182,40 @@ fun HomeScreen(onOpenPlan: () -> Unit, onOpenForecast: () -> Unit, onOpenMore: (
         }
 
         item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.balances.forEach { b ->
-                    BalanceChip(if (b.account.kind == AccountKind.DINHEIRO) "💵" else "🏦", b.account.name, Money.format(b.currentCents), b.currentCents < 0) { editing = b.account }
-                }
-                if (state.balances.none { it.account.kind == AccountKind.DINHEIRO }) {
-                    BalanceChip("💵", "Carteira", "adicionar", false) {
-                        editing = Account(UUID.randomUUID().toString(), "Carteira", 0, LocalDate.now(), AccountKind.DINHEIRO)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("Seu dinheiro", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (bankStatus.configured) {
+                        Text(
+                            if (bankStatus.running) "Sincronizando…" else "${syncedLabel(bankStatus)} · atualizar",
+                            color = if (bankStatus.lastFailed) NxusColors.Alert else NxusColors.TextMuted,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.clickable(enabled = !bankStatus.running) { BankSync.requestNow(context) }.padding(vertical = 6.dp),
+                        )
                     }
                 }
-            }
-        }
-
-        if (bankStatus.configured) {
-            item {
-                Text(
-                    if (bankStatus.running) "🔄 Sincronizando com os bancos…" else "🔄 ${syncedLabel(bankStatus)} · toque para atualizar",
-                    color = if (bankStatus.lastFailed) NxusColors.Alert else NxusColors.TextMuted,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.clickable(enabled = !bankStatus.running) { BankSync.requestNow(context) },
-                )
+                val tiles = buildList {
+                    state.balances.forEach { b -> add(Triple(b.account, b.currentCents, false)) }
+                    if (state.balances.none { it.account.kind == AccountKind.DINHEIRO }) {
+                        add(Triple(Account(UUID.randomUUID().toString(), "Carteira", 0, LocalDate.now(), AccountKind.DINHEIRO), 0L, true))
+                    }
+                }
+                tiles.chunked(2).forEachIndexed { row, pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        pair.forEachIndexed { col, (account, cents, isNew) ->
+                            val (fill, ink) = tileColors(account.kind, row * 2 + col)
+                            BalanceTile(
+                                name = account.name,
+                                value = if (isNew) "adicionar" else Money.format(cents),
+                                negative = cents < 0,
+                                fill = fill,
+                                ink = ink,
+                                modifier = Modifier.weight(1f),
+                            ) { editing = account }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
 
@@ -255,10 +275,24 @@ fun HomeScreen(onOpenPlan: () -> Unit, onOpenForecast: () -> Unit, onOpenMore: (
     }
 }
 
+/** Carteira em pêssego; bancos alternam céu, lavanda, sálvia e branco. */
+private fun tileColors(kind: AccountKind, index: Int): Pair<Color, Color> = when {
+    kind == AccountKind.DINHEIRO -> NxusColors.Peach to NxusColors.Alert
+    else -> listOf(
+        NxusColors.Sky to NxusColors.SkyDark,
+        NxusColors.Lavender to NxusColors.AccentLight,
+        NxusColors.Sage to NxusColors.SageDark,
+        NxusColors.Surface to NxusColors.TextMuted,
+    )[index % 4]
+}
+
 @Composable
-private fun BalanceChip(icon: String, name: String, value: String, negative: Boolean, onClick: () -> Unit) {
-    Column(Modifier.background(NxusColors.Surface, RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp)) {
-        Text("$icon $name", style = MaterialTheme.typography.labelMedium, color = NxusColors.TextMuted)
+private fun BalanceTile(name: String, value: String, negative: Boolean, fill: Color, ink: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.background(fill, RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(name, style = MaterialTheme.typography.labelLarge, color = ink, maxLines = 1)
         Text(value, style = MaterialTheme.typography.titleMedium, color = if (negative) NxusColors.Danger else NxusColors.Text)
     }
 }
@@ -275,15 +309,23 @@ private fun PayoffCard(debtTotalCents: Long, payoff: PayoffResult?, goalNames: L
         null -> "Faltam ${Money.formatShort(debtTotalCents)}" to ""
     }
     Row(
-        Modifier.fillMaxWidth().background(NxusColors.Surface, RoundedCornerShape(16.dp)).clickable(onClick = onOpenPlan).padding(16.dp),
+        Modifier.fillMaxWidth().background(NxusColors.Lavender, RoundedCornerShape(24.dp)).clickable(onClick = onOpenPlan).padding(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = NxusColors.AccentLight)
-            Text(subtitle, color = if (payoff is PayoffResult.NeverPaysOff) NxusColors.Danger else NxusColors.TextMuted)
+            Text(subtitle, color = if (payoff is PayoffResult.NeverPaysOff) NxusColors.Danger else NxusColors.Text)
         }
         Text("Ver plano", color = NxusColors.AccentLight, style = MaterialTheme.typography.labelLarge)
     }
+}
+
+private fun todayLabel(): String {
+    val d = LocalDate.now()
+    val ptBr = java.util.Locale("pt", "BR")
+    val day = d.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, ptBr).substringBefore('-').replaceFirstChar { it.uppercase() }
+    val month = d.month.getDisplayName(java.time.format.TextStyle.SHORT, ptBr).trimEnd('.')
+    return "$day, ${d.dayOfMonth} $month"
 }
 
 private fun greeting(): String = when (LocalTime.now().hour) {

@@ -6,7 +6,8 @@
     <application
         android:name=".NxusApp"
         android:allowBackup="false"
-        android:icon="@drawable/nxuslife_logo"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="NxusLife"
         android:supportsRtl="true"
         android:theme="@style/Theme.DreyManager"

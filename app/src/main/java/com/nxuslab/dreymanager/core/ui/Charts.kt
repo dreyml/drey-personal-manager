@@ -33,7 +33,7 @@ fun DebtChart(totals: List<Long>, firstLabel: String, lastLabel: String, modifie
             totals.forEachIndexed { index, value ->
                 val height = size.height * value / max
                 drawRoundRect(
-                    color = if (value == 0L) NxusColors.Positive else NxusColors.Accent,
+                    color = if (value == 0L) NxusColors.Positive else androidx.compose.ui.graphics.Color(0xFFB9AEE6),
                     topLeft = Offset(index * (barWidth + gap), size.height - height),
                     size = Size(barWidth, height.coerceAtLeast(2f)),
                     cornerRadius = CornerRadius(4.dp.toPx()),
