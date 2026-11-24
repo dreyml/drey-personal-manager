@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo completo (fundo lavanda arredondado) para usar dentro do app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="160"
+    android:viewportHeight="160">
+    <path
+        android:pathData="M44,0H116A44,44 0,0 1,160 44V116A44,44 0,0 1,116 160H44A44,44 0,0 1,0 116V44A44,44 0,0 1,44 0Z"
+        android:fillColor="#DED6F5" />
+    <path
+        android:pathData="M52,118V64l56,50V68"
+        android:strokeColor="#54458F"
+        android:strokeWidth="15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M108,44m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"
+        android:fillColor="#6FAF8A" />
+</vector>

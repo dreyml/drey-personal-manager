@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.DreyManager" parent="android:style/Theme.Material.NoActionBar">
+    <!-- Paleta Pastel calmo: fundo do app enquanto o Compose ainda não desenhou nada. -->
+    <style name="Theme.DreyManager" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#080B17</item>
-        <item name="android:navigationBarColor">#12182C</item>
-        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#F4F2F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F4F2F8</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
-

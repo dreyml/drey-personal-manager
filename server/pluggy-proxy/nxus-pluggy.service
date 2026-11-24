@@ -1,0 +1,24 @@
+[Unit]
+Description=NxusLife - proxy pessoal da Pluggy (Open Finance)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nxuspluggy
+Group=nxuspluggy
+EnvironmentFile=/etc/nxuslife/pluggy.env
+ExecStart=/usr/bin/python3 /opt/nxus-pluggy/nxus_pluggy.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
