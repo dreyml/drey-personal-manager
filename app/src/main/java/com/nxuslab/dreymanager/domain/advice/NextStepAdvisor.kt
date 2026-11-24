@@ -27,7 +27,14 @@ object NextStepAdvisor {
         daily: DailyView?,
         goalCardName: String?,
     ): NextStep {
-        if (shortfall != null && ChronoUnit.DAYS.between(today, shortfall.date) in 0..7) {
+        if (shortfall != null && !shortfall.date.isAfter(today)) {
+            return NextStep(
+                "Hoje falta dinheiro para as contas",
+                "Faltam ${Money.format(shortfall.cents)} para pagar o que vence. Confira os saldos ou adie o que puder; evite gastar até o salário.",
+                "Ver previsão", StepAction.PREVISAO,
+            )
+        }
+        if (shortfall != null && ChronoUnit.DAYS.between(today, shortfall.date) in 1..7) {
             return NextStep(
                 "Segure os gastos até ${shortfall.date.format(day)}",
                 "Nesse dia faltam ${Money.format(shortfall.cents)} para pagar o que vence. Evite compras grandes até lá.",

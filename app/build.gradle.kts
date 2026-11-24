@@ -19,9 +19,9 @@ android {
         applicationId = "com.nxuslab.dreymanager"
         minSdk = 26
         targetSdk = 36
-        // Publicadas: 0.9.4 (13), 2.0.0 (14), 2.0.1 (15), 2.1.0 (16). Cada versão nova precisa de um número maior.
-        versionCode = 17
-        versionName = "2.2.0"
+        // Publicadas: 0.9.4 (13), 2.0.0 (14), 2.0.1 (15), 2.1.0 (16), 2.2.0 (17). Cada versão nova precisa de um número maior.
+        versionCode = 18
+        versionName = "3.0.0"
         buildConfigField(
             "String",
             "UPDATE_MANIFEST_URL",

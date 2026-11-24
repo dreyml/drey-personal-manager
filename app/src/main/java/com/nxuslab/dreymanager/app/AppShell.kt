@@ -90,7 +90,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.nxuslab.dreymanager.feature.plano.PlanoTab
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import com.nxuslab.dreymanager.feature.home.HomeScreen
+import com.nxuslab.dreymanager.feature.financas.FinancasScreen
+import com.nxuslab.dreymanager.feature.hub.HubScreen
 import com.nxuslab.dreymanager.feature.onboarding.OnboardingScreen
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -149,6 +150,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
 object Routes {
     const val ONBOARDING = "onboarding"
+    const val HUB = "hub"
     const val HOME = "home"
     const val GASTOS = "gastos"
     const val PLANO = "plano"
@@ -193,7 +195,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
     val current by navController.currentBackStackEntryAsState()
     val route = current?.destination?.route
     var addExpenseOpen by rememberSaveable { mutableStateOf(false) }
-    val showChrome = route != null && route != Routes.ONBOARDING
+    val showChrome = route != null && route != Routes.ONBOARDING && route != Routes.HUB
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -216,18 +218,22 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = if (state.onboardingDone) Routes.HOME else Routes.ONBOARDING,
+            startDestination = if (state.onboardingDone) Routes.HUB else Routes.ONBOARDING,
             modifier = Modifier.padding(padding),
         ) {
             composable(Routes.ONBOARDING) {
                 OnboardingScreen(onFinished = {
                     onOnboardingFinished()
                     askNotificationPermission()
-                    navController.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
+                    navController.navigate(Routes.HUB) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
                 })
             }
+            composable(Routes.HUB) {
+                HubScreen(onOpenFinance = { navController.navigate(Routes.HOME) { launchSingleTop = true } })
+            }
             composable(Routes.HOME, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.HOME })) {
-                HomeScreen(
+                FinancasScreen(
+                    onBack = { if (!navController.popBackStack(Routes.HUB, inclusive = false)) navController.navigate(Routes.HUB) },
                     onOpenPlan = { navController.navigateTab(Routes.PLANO) },
                     onOpenForecast = { navController.navigateTab("${Routes.PLANO}?aba=${PlanoTab.PREVISAO.name}") },
                     onOpenMore = { navController.navigateTab(Routes.MAIS) },
