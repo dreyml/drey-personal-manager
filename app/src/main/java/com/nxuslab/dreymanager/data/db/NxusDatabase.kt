@@ -135,14 +135,35 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+@Dao
+interface WaterDao {
+    @Query("SELECT * FROM water_settings WHERE id = 1") fun observeSettings(): Flow<WaterSettingsEntity?>
+    @Query("SELECT * FROM water_settings WHERE id = 1") suspend fun settings(): WaterSettingsEntity?
+    @Upsert suspend fun upsertSettings(settings: WaterSettingsEntity)
+    @Query("SELECT * FROM water_log WHERE at >= :from ORDER BY at") fun observeSince(from: Long): Flow<List<WaterLogEntity>>
+    @Query("SELECT COALESCE(SUM(ml), 0) FROM water_log WHERE at >= :from AND at < :to") suspend fun sumBetween(from: Long, to: Long): Int
+    @androidx.room.Insert suspend fun insert(log: WaterLogEntity)
+    @Query("DELETE FROM water_log WHERE id = (SELECT MAX(id) FROM water_log WHERE at >= :from)") suspend fun deleteLastSince(from: Long)
+}
+
+/** v3 → v4 (3.1.0): plano de água e registro de goles. Só adiciona. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `water_settings` (`id` INTEGER NOT NULL, `goalMl` INTEGER NOT NULL, `bottleMl` INTEGER NOT NULL, `startMinute` INTEGER NOT NULL, `endMinute` INTEGER NOT NULL, `remindersOn` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `water_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `at` INTEGER NOT NULL, `ml` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_water_log_at` ON `water_log` (`at`)")
+    }
+}
+
 @Database(
     entities = [
         SettingsEntity::class, IncomeEntity::class, AccountEntity::class, FixedBillEntity::class,
         CardEntity::class, CardDebtEntity::class, CategoryEntity::class, EnvelopeEntity::class,
         ExpenseEntity::class, WishEntity::class, WishSavingEntity::class,
         VariableBillEntity::class, VariableBillValueEntity::class, PaidItemEntity::class,
+        WaterSettingsEntity::class, WaterLogEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -157,6 +178,7 @@ abstract class NxusDatabase : RoomDatabase() {
     abstract fun wishDao(): WishDao
     abstract fun variableBillDao(): VariableBillDao
     abstract fun paidItemDao(): PaidItemDao
+    abstract fun waterDao(): WaterDao
 
     companion object {
         const val NAME = "nxuslife.db"
@@ -165,7 +187,7 @@ abstract class NxusDatabase : RoomDatabase() {
 
         fun get(context: Context): NxusDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, NxusDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also { instance = it }
         }

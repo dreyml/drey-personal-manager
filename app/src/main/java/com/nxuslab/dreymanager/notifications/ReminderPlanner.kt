@@ -19,6 +19,7 @@ enum class Channel(val id: String, val label: String) {
     LEMBRETES("lembretes", "Lembretes"),
     VENCIMENTOS("vencimentos", "Vencimentos"),
     ALERTAS("alertas", "Alertas"),
+    AGUA("agua", "Água"),
 }
 
 /**

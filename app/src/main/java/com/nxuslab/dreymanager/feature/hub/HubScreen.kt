@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,7 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import com.nxuslab.dreymanager.data.sync.BankSync
 import com.nxuslab.dreymanager.domain.advice.StepAction
 import com.nxuslab.dreymanager.domain.money.Money
 import com.nxuslab.dreymanager.feature.financas.financeOverview
+import com.nxuslab.dreymanager.domain.water.WaterPlan
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -71,10 +73,13 @@ import java.util.Locale
 
 class HubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as NxusApp).repository
+    private val water = (application as NxusApp).water
 
-    data class State(val name: String, val financeLine: String)
+    data class State(val name: String, val financeLine: String, val waterLine: String, val waterProgress: Float?)
 
-    val state: StateFlow<State?> = combine(repository.snapshot, BankSync.status) { snapshot, sync ->
+    val state: StateFlow<State?> = combine(
+        repository.snapshot, BankSync.status, water.settings, water.totalsSince(LocalDate.now()),
+    ) { snapshot, sync, waterPlan, totals ->
         val overview = snapshot.financeOverview(LocalDate.now(), sync.lastFailed)
         val line = when {
             overview.nextStep.action != StepAction.NONE -> overview.nextStep.title
@@ -82,7 +87,9 @@ class HubViewModel(application: Application) : AndroidViewModel(application) {
             overview.daily != null -> "Hoje dá para gastar ${Money.formatShort(overview.daily.remainingTodayCents)}"
             else -> "Saldo, cartões e plano"
         }
-        State(snapshot.settings.userName, line)
+        val drank = totals[LocalDate.now()] ?: 0
+        val waterLine = waterPlan?.let { "Água · ${WaterPlan.litersLabel(drank)} de ${WaterPlan.litersLabel(it.goalMl)}" } ?: "Monte seu plano de água"
+        State(snapshot.settings.userName, line, waterLine, waterPlan?.let { (drank.toFloat() / it.goalMl).coerceIn(0f, 1f) })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun saveName(name: String) {
@@ -94,7 +101,7 @@ private val ptBr = Locale("pt", "BR")
 
 /** Entrada do app: boas-vindas, pensamento do dia e as áreas da vida. */
 @Composable
-fun HubScreen(onOpenFinance: () -> Unit, viewModel: HubViewModel = viewModel()) {
+fun HubScreen(onOpenFinance: () -> Unit, onOpenMelhor: () -> Unit, viewModel: HubViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val s = state ?: return
     val today = LocalDate.now()
@@ -131,7 +138,7 @@ fun HubScreen(onOpenFinance: () -> Unit, viewModel: HubViewModel = viewModel()) 
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     AreaCard("Controle financeiro", s.financeLine, Icons.Filled.CreditCard, NxusColors.Sage, NxusColors.SageDark, enabled = true, onClick = onOpenFinance)
                     AreaCard("Anotações", "Lembretes e ideias · em breve", Icons.AutoMirrored.Filled.Notes, NxusColors.Peach, NxusColors.Alert, enabled = false) {}
-                    AreaCard("Seja sua melhor versão", "Água, alimentação e mente · em breve", Icons.Filled.FavoriteBorder, NxusColors.Lavender, NxusColors.AccentLight, enabled = false) {}
+                    AreaCard("Seja sua melhor versão", s.waterLine, Icons.Filled.WaterDrop, NxusColors.Sky, NxusColors.SkyDark, enabled = true, progress = s.waterProgress, onClick = onOpenMelhor)
                 }
             }
         }
@@ -156,9 +163,13 @@ fun HubScreen(onOpenFinance: () -> Unit, viewModel: HubViewModel = viewModel()) 
 }
 
 @Composable
-private fun AreaCard(title: String, subtitle: String, icon: ImageVector, fill: Color, ink: Color, enabled: Boolean, onClick: () -> Unit) {
-    Row(
+private fun AreaCard(title: String, subtitle: String, icon: ImageVector, fill: Color, ink: Color, enabled: Boolean, progress: Float? = null, onClick: () -> Unit) {
+    Column(
         Modifier.fillMaxWidth().background(fill, RoundedCornerShape(26.dp)).clickable(enabled = enabled, onClick = onClick).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+    Row(
+        Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -170,6 +181,12 @@ private fun AreaCard(title: String, subtitle: String, icon: ImageVector, fill: C
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = NxusColors.Text.copy(alpha = 0.8f))
         }
         if (enabled) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = ink)
+    }
+    if (progress != null) {
+        Box(Modifier.fillMaxWidth().height(8.dp).background(Color.White.copy(alpha = 0.75f), RoundedCornerShape(4.dp))) {
+            Box(Modifier.fillMaxWidth(progress).height(8.dp).background(Color(0xFF5C93C2), RoundedCornerShape(4.dp)))
+        }
+    }
     }
 }
 

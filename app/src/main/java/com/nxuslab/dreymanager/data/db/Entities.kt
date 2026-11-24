@@ -184,3 +184,23 @@ data class PaidItemEntity(
     val month: java.time.YearMonth,
     val paidAt: Long,
 )
+
+/** Plano de água (linha única, id = 1). Horários em minutos desde 00:00. */
+@Entity(tableName = "water_settings")
+data class WaterSettingsEntity(
+    @PrimaryKey val id: Int = 1,
+    val goalMl: Int,
+    val bottleMl: Int,
+    val startMinute: Int,
+    val endMinute: Int,
+    val remindersOn: Boolean,
+    val updatedAt: Long,
+)
+
+/** Cada gole registrado: horário (epoch ms) e quantidade. */
+@Entity(tableName = "water_log", indices = [Index("at")])
+data class WaterLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val at: Long,
+    val ml: Int,
+)

@@ -16,6 +16,9 @@ import com.nxuslab.dreymanager.data.sync.BankSync
 /** Guarda as dependências do app: um único banco e um único repositório. */
 class NxusApp : Application() {
     val repository: FinanceRepository by lazy { FinanceRepository(NxusDatabase.get(this)) }
+    val water: com.nxuslab.dreymanager.data.repo.WaterRepository by lazy {
+        com.nxuslab.dreymanager.data.repo.WaterRepository(NxusDatabase.get(this).waterDao())
+    }
 
     override fun onCreate() {
         super.onCreate()

@@ -68,7 +68,23 @@ class MigrationTest {
         db.query("SELECT COUNT(*) FROM paid_item").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
     }
 
+    @Test
+    fun v3ParaV4MantemOsDadosEAdicionaAgua() {
+        helper.createDatabase(DB4, 3).apply {
+            execSQL("INSERT INTO account (id, name, balanceCents, balanceUpdatedAt, kind, balanceUpdatedAtMillis) VALUES ('c', 'Sicoob', 48620, '2026-11-24', 'BANCO', 5)")
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(DB4, 4, true, com.nxuslab.dreymanager.data.db.MIGRATION_3_4)
+
+        db.query("SELECT balanceCents FROM account").use { it.moveToFirst(); assertEquals(48620L, it.getLong(0)) }
+        db.execSQL("INSERT INTO water_settings (id, goalMl, bottleMl, startMinute, endMinute, remindersOn, updatedAt) VALUES (1, 3000, 750, 480, 1020, 1, 1)")
+        db.execSQL("INSERT INTO water_log (at, ml) VALUES (10, 300)")
+        db.query("SELECT SUM(ml) FROM water_log").use { it.moveToFirst(); assertEquals(300, it.getInt(0)) }
+    }
+
     private companion object {
+        const val DB4 = "migration-test-4.db"
         const val DB3 = "migration-test-3.db"
         const val DB = "migration-test.db"
     }
