@@ -19,6 +19,12 @@ class NxusApp : Application() {
     val water: com.nxuslab.dreymanager.data.repo.WaterRepository by lazy {
         com.nxuslab.dreymanager.data.repo.WaterRepository(NxusDatabase.get(this).waterDao())
     }
+    val notes: com.nxuslab.dreymanager.data.repo.NotesRepository by lazy {
+        com.nxuslab.dreymanager.data.repo.NotesRepository(
+            NxusDatabase.get(this).notesDao(),
+            com.nxuslab.dreymanager.notifications.AlarmReminderScheduler(this),
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()

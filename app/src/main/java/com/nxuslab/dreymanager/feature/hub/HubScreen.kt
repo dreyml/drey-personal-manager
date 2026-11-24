@@ -74,12 +74,34 @@ import java.util.Locale
 class HubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as NxusApp).repository
     private val water = (application as NxusApp).water
+    private val notes = (application as NxusApp).notes
 
-    data class State(val name: String, val financeLine: String, val waterLine: String, val waterProgress: Float?)
+    /** Resumo das Anotações para o card do hub. */
+    private val notesLine = combine(notes.reminders, notes.notes, notes.lists) { reminders, n, l ->
+        val now = java.time.LocalDateTime.now()
+        val today = now.toLocalDate()
+        val todays = reminders.filter { r -> r.nextAt?.let { !it.toLocalDate().isAfter(today) } == true }
+        val next = todays.mapNotNull { it.nextAt }.filter { it.isAfter(now) }.minOrNull()
+        val late = todays.count { it.nextAt!!.isBefore(now) }
+        when {
+            todays.isNotEmpty() -> buildString {
+                append(if (todays.size == 1) "1 lembrete hoje" else "${todays.size} lembretes hoje")
+                if (next != null) append(" · próximo às %02d:%02d".format(next.hour, next.minute))
+                else if (late > 0) append(" · ${if (late == 1) "1 atrasado" else "$late atrasados"}")
+            }
+            n.isNotEmpty() || l.isNotEmpty() -> listOfNotNull(
+                n.size.takeIf { it > 0 }?.let { if (it == 1) "1 nota" else "$it notas" },
+                l.size.takeIf { it > 0 }?.let { if (it == 1) "1 lista" else "$it listas" },
+            ).joinToString(" · ")
+            else -> "Notas, listas e lembretes"
+        }
+    }
+
+    data class State(val name: String, val financeLine: String, val waterLine: String, val waterProgress: Float?, val notesLine: String)
 
     val state: StateFlow<State?> = combine(
-        repository.snapshot, BankSync.status, water.settings, water.totalsSince(LocalDate.now()),
-    ) { snapshot, sync, waterPlan, totals ->
+        repository.snapshot, BankSync.status, water.settings, water.totalsSince(LocalDate.now()), notesLine,
+    ) { snapshot, sync, waterPlan, totals, notesText ->
         val overview = snapshot.financeOverview(LocalDate.now(), sync.lastFailed)
         val line = when {
             overview.nextStep.action != StepAction.NONE -> overview.nextStep.title
@@ -89,7 +111,7 @@ class HubViewModel(application: Application) : AndroidViewModel(application) {
         }
         val drank = totals[LocalDate.now()] ?: 0
         val waterLine = waterPlan?.let { "Água · ${WaterPlan.litersLabel(drank)} de ${WaterPlan.litersLabel(it.goalMl)}" } ?: "Monte seu plano de água"
-        State(snapshot.settings.userName, line, waterLine, waterPlan?.let { (drank.toFloat() / it.goalMl).coerceIn(0f, 1f) })
+        State(snapshot.settings.userName, line, waterLine, waterPlan?.let { (drank.toFloat() / it.goalMl).coerceIn(0f, 1f) }, notesText)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun saveName(name: String) {
@@ -101,7 +123,7 @@ private val ptBr = Locale("pt", "BR")
 
 /** Entrada do app: boas-vindas, pensamento do dia e as áreas da vida. */
 @Composable
-fun HubScreen(onOpenFinance: () -> Unit, onOpenMelhor: () -> Unit, viewModel: HubViewModel = viewModel()) {
+fun HubScreen(onOpenFinance: () -> Unit, onOpenMelhor: () -> Unit, onOpenNotas: () -> Unit, viewModel: HubViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val s = state ?: return
     val today = LocalDate.now()
@@ -137,7 +159,7 @@ fun HubScreen(onOpenFinance: () -> Unit, onOpenMelhor: () -> Unit, viewModel: Hu
             AnimatedVisibility(appear, enter = fadeIn(tween(400)) + slideInVertically(tween(400)) { it / 6 }) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     AreaCard("Controle financeiro", s.financeLine, Icons.Filled.CreditCard, NxusColors.Sage, NxusColors.SageDark, enabled = true, onClick = onOpenFinance)
-                    AreaCard("Anotações", "Lembretes e ideias · em breve", Icons.AutoMirrored.Filled.Notes, NxusColors.Peach, NxusColors.Alert, enabled = false) {}
+                    AreaCard("Anotações", s.notesLine, Icons.AutoMirrored.Filled.Notes, NxusColors.Peach, NxusColors.Alert, enabled = true, onClick = onOpenNotas)
                     AreaCard("Seja sua melhor versão", s.waterLine, Icons.Filled.WaterDrop, NxusColors.Sky, NxusColors.SkyDark, enabled = true, progress = s.waterProgress, onClick = onOpenMelhor)
                 }
             }

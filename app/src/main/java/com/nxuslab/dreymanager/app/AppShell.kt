@@ -129,6 +129,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(ready = true, onboardingDone = settings.onboardingDone, startupError = error) }
             Notifier.createChannels(application)
             Reminders.schedule(application, settings.reminderMinutes, replace = false)
+            (application as NxusApp).notes.rescheduleAll()
             (application as NxusApp).water.settingsNow()?.let { com.nxuslab.dreymanager.notifications.WaterReminders.sync(application, it.remindersOn) }
             if (settings.onboardingDone) com.nxuslab.dreymanager.data.sync.BankSync.syncIfStale(application)
         }
@@ -153,6 +154,7 @@ object Routes {
     const val ONBOARDING = "onboarding"
     const val HUB = "hub"
     const val MELHOR = "melhor"
+    const val NOTAS = "notas"
     const val HOME = "home"
     const val GASTOS = "gastos"
     const val PLANO = "plano"
@@ -197,7 +199,7 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
     val current by navController.currentBackStackEntryAsState()
     val route = current?.destination?.route
     var addExpenseOpen by rememberSaveable { mutableStateOf(false) }
-    val showChrome = route != null && route != Routes.ONBOARDING && route != Routes.HUB && route != Routes.MELHOR
+    val showChrome = route != null && route != Routes.ONBOARDING && route != Routes.HUB && route != Routes.MELHOR && !route.startsWith(Routes.NOTAS)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -234,7 +236,25 @@ private fun NxusNavHost(state: AppState, onOnboardingFinished: () -> Unit, onPer
                 HubScreen(
                     onOpenFinance = { navController.navigate(Routes.HOME) { launchSingleTop = true } },
                     onOpenMelhor = { navController.navigate(Routes.MELHOR) { launchSingleTop = true } },
+                    onOpenNotas = { navController.navigate(Routes.NOTAS) { launchSingleTop = true } },
                 )
+            }
+            composable(Routes.NOTAS, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.NOTAS })) {
+                com.nxuslab.dreymanager.feature.notas.NotasScreen(
+                    onBack = { if (!navController.popBackStack(Routes.HUB, inclusive = false)) navController.navigate(Routes.HUB) },
+                    onOpenNote = { navController.navigate("${Routes.NOTAS}/nota/$it") },
+                    onOpenList = { navController.navigate("${Routes.NOTAS}/lista/$it") },
+                    onOpenReminder = { navController.navigate("${Routes.NOTAS}/lembrete/$it") },
+                )
+            }
+            composable("${Routes.NOTAS}/nota/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                com.nxuslab.dreymanager.feature.notas.NoteEditor(e.arguments?.getLong("id") ?: 0L, onBack = { navController.popBackStack() })
+            }
+            composable("${Routes.NOTAS}/lista/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                com.nxuslab.dreymanager.feature.notas.ListEditor(e.arguments?.getLong("id") ?: 0L, onBack = { navController.popBackStack() })
+            }
+            composable("${Routes.NOTAS}/lembrete/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                com.nxuslab.dreymanager.feature.notas.ReminderEditor(e.arguments?.getLong("id") ?: 0L, onBack = { navController.popBackStack() })
             }
             composable(Routes.MELHOR, deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_BASE + Routes.MELHOR })) {
                 com.nxuslab.dreymanager.feature.melhor.MelhorScreen(

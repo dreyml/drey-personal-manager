@@ -83,7 +83,24 @@ class MigrationTest {
         db.query("SELECT SUM(ml) FROM water_log").use { it.moveToFirst(); assertEquals(300, it.getInt(0)) }
     }
 
+    @Test
+    fun v4ParaV5AdicionaNotasListasELembretes() {
+        helper.createDatabase(DB5, 4).apply {
+            execSQL("INSERT INTO water_log (at, ml) VALUES (10, 300)")
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(DB5, 5, true, com.nxuslab.dreymanager.data.db.MIGRATION_4_5)
+
+        db.query("SELECT SUM(ml) FROM water_log").use { it.moveToFirst(); assertEquals(300, it.getInt(0)) }
+        db.execSQL("INSERT INTO checklist (title, updatedAt) VALUES ('Mercado', 1)")
+        db.execSQL("INSERT INTO checklist_item (listId, text, done, position) VALUES (1, 'Café', 0, 0)")
+        db.execSQL("INSERT INTO reminder (text, startDate, minuteOfDay, repeat, weekDays, nextAt, doneAt, createdAt) VALUES ('Remédio', '2026-11-24', 900, 'DAILY', 0, NULL, NULL, 1)")
+        db.query("SELECT COUNT(*) FROM checklist_item").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+    }
+
     private companion object {
+        const val DB5 = "migration-test-5.db"
         const val DB4 = "migration-test-4.db"
         const val DB3 = "migration-test-3.db"
         const val DB = "migration-test.db"

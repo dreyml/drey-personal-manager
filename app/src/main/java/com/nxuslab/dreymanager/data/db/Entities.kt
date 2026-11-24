@@ -197,6 +197,51 @@ data class WaterSettingsEntity(
     val updatedAt: Long,
 )
 
+/** Nota livre. [color]: 0 branco, 1 pêssego, 2 céu, 3 sálvia, 4 lavanda. */
+@Entity(tableName = "note")
+data class NoteEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val body: String,
+    val color: Int,
+    val pinned: Boolean,
+    val updatedAt: Long,
+)
+
+@Entity(tableName = "checklist")
+data class ChecklistEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "checklist_item",
+    foreignKeys = [ForeignKey(entity = ChecklistEntity::class, parentColumns = ["id"], childColumns = ["listId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("listId")],
+)
+data class ChecklistItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val listId: Long,
+    val text: String,
+    val done: Boolean,
+    val position: Int,
+)
+
+/** Lembrete com hora. [repeat] = nome de Repeat; [nextAt] null quando não toca mais. */
+@Entity(tableName = "reminder")
+data class ReminderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val text: String,
+    val startDate: java.time.LocalDate,
+    val minuteOfDay: Int,
+    val repeat: String,
+    val weekDays: Int,
+    val nextAt: Long?,
+    val doneAt: Long?,
+    val createdAt: Long,
+)
+
 /** Cada gole registrado: horário (epoch ms) e quantidade. */
 @Entity(tableName = "water_log", indices = [Index("at")])
 data class WaterLogEntity(

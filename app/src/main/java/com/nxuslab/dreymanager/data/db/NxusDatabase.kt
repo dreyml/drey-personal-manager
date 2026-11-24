@@ -146,6 +146,47 @@ interface WaterDao {
     @Query("DELETE FROM water_log WHERE id = (SELECT MAX(id) FROM water_log WHERE at >= :from)") suspend fun deleteLastSince(from: Long)
 }
 
+@Dao
+interface NotesDao {
+    @Query("SELECT * FROM note ORDER BY pinned DESC, updatedAt DESC") fun observeNotes(): Flow<List<NoteEntity>>
+    @Query("SELECT * FROM note WHERE id = :id") suspend fun note(id: Long): NoteEntity?
+    @androidx.room.Insert suspend fun insertNote(note: NoteEntity): Long
+    @androidx.room.Update suspend fun updateNote(note: NoteEntity)
+    @Query("DELETE FROM note WHERE id = :id") suspend fun deleteNote(id: Long)
+
+    @Query("SELECT * FROM checklist ORDER BY updatedAt DESC") fun observeLists(): Flow<List<ChecklistEntity>>
+    @Query("SELECT * FROM checklist_item ORDER BY listId, position") fun observeItems(): Flow<List<ChecklistItemEntity>>
+    @Query("SELECT * FROM checklist WHERE id = :id") suspend fun list(id: Long): ChecklistEntity?
+    @androidx.room.Insert suspend fun insertList(list: ChecklistEntity): Long
+    @androidx.room.Update suspend fun updateList(list: ChecklistEntity)
+    @Query("DELETE FROM checklist WHERE id = :id") suspend fun deleteList(id: Long)
+    @Query("DELETE FROM checklist_item WHERE listId = :listId") suspend fun deleteItemsOf(listId: Long)
+    @Query("SELECT COALESCE(MAX(position), -1) FROM checklist_item WHERE listId = :listId") suspend fun maxPosition(listId: Long): Int
+    @androidx.room.Insert suspend fun insertItem(item: ChecklistItemEntity): Long
+    @Query("UPDATE checklist_item SET done = :done WHERE id = :id") suspend fun setItemDone(id: Long, done: Boolean)
+    @Query("DELETE FROM checklist_item WHERE id = :id") suspend fun deleteItem(id: Long)
+    @Query("DELETE FROM checklist_item WHERE listId = :listId AND done = 1") suspend fun clearDone(listId: Long)
+    @Query("UPDATE checklist SET updatedAt = :at WHERE id = :id") suspend fun touchList(id: Long, at: Long)
+
+    @Query("SELECT * FROM reminder ORDER BY nextAt IS NULL, nextAt, doneAt DESC") fun observeReminders(): Flow<List<ReminderEntity>>
+    @Query("SELECT * FROM reminder WHERE id = :id") suspend fun reminder(id: Long): ReminderEntity?
+    @Query("SELECT * FROM reminder WHERE nextAt IS NOT NULL") suspend fun scheduledReminders(): List<ReminderEntity>
+    @androidx.room.Insert suspend fun insertReminder(reminder: ReminderEntity): Long
+    @androidx.room.Update suspend fun updateReminder(reminder: ReminderEntity)
+    @Query("DELETE FROM reminder WHERE id = :id") suspend fun deleteReminder(id: Long)
+}
+
+/** v4 → v5 (3.2.0): notas, listas e lembretes. Só adiciona. */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `note` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `body` TEXT NOT NULL, `color` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `checklist` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `checklist_item` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `listId` INTEGER NOT NULL, `text` TEXT NOT NULL, `done` INTEGER NOT NULL, `position` INTEGER NOT NULL, FOREIGN KEY(`listId`) REFERENCES `checklist`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_checklist_item_listId` ON `checklist_item` (`listId`)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `reminder` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `text` TEXT NOT NULL, `startDate` TEXT NOT NULL, `minuteOfDay` INTEGER NOT NULL, `repeat` TEXT NOT NULL, `weekDays` INTEGER NOT NULL, `nextAt` INTEGER, `doneAt` INTEGER, `createdAt` INTEGER NOT NULL)")
+    }
+}
+
 /** v3 → v4 (3.1.0): plano de água e registro de goles. Só adiciona. */
 val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -162,8 +203,9 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         ExpenseEntity::class, WishEntity::class, WishSavingEntity::class,
         VariableBillEntity::class, VariableBillValueEntity::class, PaidItemEntity::class,
         WaterSettingsEntity::class, WaterLogEntity::class,
+        NoteEntity::class, ChecklistEntity::class, ChecklistItemEntity::class, ReminderEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -179,6 +221,7 @@ abstract class NxusDatabase : RoomDatabase() {
     abstract fun variableBillDao(): VariableBillDao
     abstract fun paidItemDao(): PaidItemDao
     abstract fun waterDao(): WaterDao
+    abstract fun notesDao(): NotesDao
 
     companion object {
         const val NAME = "nxuslife.db"
@@ -187,7 +230,7 @@ abstract class NxusDatabase : RoomDatabase() {
 
         fun get(context: Context): NxusDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, NxusDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }
