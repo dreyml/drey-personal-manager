@@ -35,6 +35,8 @@ data class SettingsEntity(
     val legacyWiped: Boolean = false,
     val onboardingDone: Boolean = false,
     val notificationsDenied: Boolean = false,
+    /** Como o usuário quer ser chamado no hub (v3). */
+    @ColumnInfo(defaultValue = "") val userName: String = "",
 )
 
 @Entity(tableName = "income")
@@ -170,4 +172,15 @@ data class WishSavingEntity(
     val wishId: String,
     val amountCents: Long,
     val date: LocalDate,
+)
+
+/**
+ * Item do "Este mês, pague" marcado como pago (v3). [key] identifica o item: `bill:<id>`,
+ * `debt:<id>`, `variable:<id>` ou `payoff`.
+ */
+@Entity(tableName = "paid_item", primaryKeys = ["key", "month"])
+data class PaidItemEntity(
+    val key: String,
+    val month: java.time.YearMonth,
+    val paidAt: Long,
 )

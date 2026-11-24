@@ -4,6 +4,7 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.nxuslab.dreymanager.data.db.MIGRATION_1_2
+import com.nxuslab.dreymanager.data.db.MIGRATION_2_3
 import com.nxuslab.dreymanager.data.db.NxusDatabase
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,7 +47,29 @@ class MigrationTest {
         db.query("SELECT COUNT(*) FROM variable_bill").use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
     }
 
+    @Test
+    fun v2ParaV3MantemOsDadosEAdicionaNomeEPagos() {
+        helper.createDatabase(DB3, 2).apply {
+            execSQL("INSERT INTO settings (id, weekStartDay, reminderMinutes, reserveCents, payoffExtraMonthlyCents, weeklyLimitOverrideCents, extraSplitToDebtPercent, legacyWiped, onboardingDone, notificationsDenied) VALUES (1, 1, 1260, 0, 20000, NULL, 50, 1, 1, 0)")
+            execSQL("INSERT INTO account (id, name, balanceCents, balanceUpdatedAt, kind, balanceUpdatedAtMillis) VALUES ('c', 'Sicoob', 48620, '2026-11-24', 'BANCO', 5)")
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(DB3, 3, true, MIGRATION_2_3)
+
+        db.query("SELECT onboardingDone, payoffExtraMonthlyCents, userName FROM settings").use {
+            it.moveToFirst()
+            assertEquals(1, it.getInt(0))
+            assertEquals(20000L, it.getLong(1))
+            assertEquals("", it.getString(2))
+        }
+        db.query("SELECT balanceCents FROM account").use { it.moveToFirst(); assertEquals(48620L, it.getLong(0)) }
+        db.execSQL("INSERT INTO paid_item (`key`, month, paidAt) VALUES ('bill:luz', '2026-11', 1)")
+        db.query("SELECT COUNT(*) FROM paid_item").use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+    }
+
     private companion object {
+        const val DB3 = "migration-test-3.db"
         const val DB = "migration-test.db"
     }
 }

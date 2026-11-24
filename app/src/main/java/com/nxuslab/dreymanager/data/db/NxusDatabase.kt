@@ -120,14 +120,29 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+@Dao
+interface PaidItemDao {
+    @Query("SELECT * FROM paid_item") fun observeAll(): Flow<List<PaidItemEntity>>
+    @Upsert suspend fun upsert(item: PaidItemEntity)
+    @Query("DELETE FROM paid_item WHERE `key` = :key AND month = :month") suspend fun delete(key: String, month: java.time.YearMonth)
+}
+
+/** v2 → v3 (3.0.0): nome do usuário no hub e itens do mês marcados como pagos. Só adiciona. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `settings` ADD COLUMN `userName` TEXT NOT NULL DEFAULT ''")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `paid_item` (`key` TEXT NOT NULL, `month` TEXT NOT NULL, `paidAt` INTEGER NOT NULL, PRIMARY KEY(`key`, `month`))")
+    }
+}
+
 @Database(
     entities = [
         SettingsEntity::class, IncomeEntity::class, AccountEntity::class, FixedBillEntity::class,
         CardEntity::class, CardDebtEntity::class, CategoryEntity::class, EnvelopeEntity::class,
         ExpenseEntity::class, WishEntity::class, WishSavingEntity::class,
-        VariableBillEntity::class, VariableBillValueEntity::class,
+        VariableBillEntity::class, VariableBillValueEntity::class, PaidItemEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -141,6 +156,7 @@ abstract class NxusDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
     abstract fun wishDao(): WishDao
     abstract fun variableBillDao(): VariableBillDao
+    abstract fun paidItemDao(): PaidItemDao
 
     companion object {
         const val NAME = "nxuslife.db"
@@ -149,7 +165,7 @@ abstract class NxusDatabase : RoomDatabase() {
 
         fun get(context: Context): NxusDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, NxusDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

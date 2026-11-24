@@ -54,6 +54,7 @@ data class AppSettings(
     val onboardingDone: Boolean = false,
     val notificationsDenied: Boolean = false,
     val legacyWiped: Boolean = false,
+    val userName: String = "",
 )
 
 /** Tudo o que as telas precisam, já convertido para os modelos de domínio. */
@@ -71,6 +72,8 @@ data class FinanceSnapshot(
     val savedByWish: Map<String, Long> = emptyMap(),
     val variableBills: List<VariableBill> = emptyList(),
     val variableActuals: Map<Pair<String, YearMonth>, Long> = emptyMap(),
+    /** Itens do "Este mês, pague" marcados como pagos: (chave, mês). */
+    val paidItems: Set<Pair<String, YearMonth>> = emptySet(),
 ) {
     /**
      * Saldo atual de uma conta: o valor informado, menos gastos em Pix/débito/dinheiro e mais
@@ -116,6 +119,7 @@ class FinanceRepository(private val db: NxusDatabase) {
         db.wishDao().observeSavings(),
         db.variableBillDao().observeAll(),
         db.variableBillDao().observeValues(),
+        db.paidItemDao().observeAll(),
     ) { rows ->
         @Suppress("UNCHECKED_CAST")
         FinanceSnapshot(
@@ -132,6 +136,7 @@ class FinanceRepository(private val db: NxusDatabase) {
             expenses = (rows[8] as List<ExpenseEntity>).map { it.toDomain() },
             wishes = (rows[9] as List<WishEntity>).map { Wish(it.id, it.name, it.priceCents, it.targetDate, it.priority, it.status, it.createdAt) },
             savedByWish = (rows[10] as List<WishSavingEntity>).groupBy { it.wishId }.mapValues { (_, list) -> list.sumOf { it.amountCents } },
+            paidItems = (rows[13] as List<com.nxuslab.dreymanager.data.db.PaidItemEntity>).map { it.key to it.month }.toSet(),
         )
     }
 
@@ -229,6 +234,20 @@ class FinanceRepository(private val db: NxusDatabase) {
         }
     }
 
+    /** Marca ou desmarca um item do "Este mês, pague". */
+    suspend fun setPaid(key: String, month: YearMonth, paid: Boolean): Result<Unit> = safe {
+        if (paid) db.paidItemDao().upsert(com.nxuslab.dreymanager.data.db.PaidItemEntity(key, month, System.currentTimeMillis()))
+        else db.paidItemDao().delete(key, month)
+    }
+
+    /** Fatura paga: marca no mês e tira a fatura das dívidas, numa transação. */
+    suspend fun payInvoice(debtId: String, key: String, month: YearMonth): Result<Unit> = safe {
+        db.withTransaction {
+            db.paidItemDao().upsert(com.nxuslab.dreymanager.data.db.PaidItemEntity(key, month, System.currentTimeMillis()))
+            db.cardDao().deleteDebt(debtId)
+        }
+    }
+
     suspend fun deleteAccount(id: String): Result<Unit> = safe { db.accountDao().delete(id) }
 
     suspend fun saveFixedBill(bill: FixedBill): Result<Unit> = safe {
@@ -312,6 +331,7 @@ private fun SettingsEntity?.toDomain(): AppSettings {
         onboardingDone = row.onboardingDone,
         notificationsDenied = row.notificationsDenied,
         legacyWiped = row.legacyWiped,
+        userName = row.userName,
     )
 }
 
@@ -325,6 +345,7 @@ private fun AppSettings.toEntity() = SettingsEntity(
     legacyWiped = legacyWiped,
     onboardingDone = onboardingDone,
     notificationsDenied = notificationsDenied,
+    userName = userName,
 )
 
 /** O que veio no arquivo de importação. */
